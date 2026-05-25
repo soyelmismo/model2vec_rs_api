@@ -1,6 +1,5 @@
-use axum::{http::StatusCode, response::IntoResponse, Json};
-use serde_json::json;
+use crate::server::Response;
 
-pub async fn health() -> impl IntoResponse {
-    (StatusCode::OK, Json(json!({ "status": "ok" })))
+pub fn handle() -> Response {
+    Response::json(200, br#"{"status":"ok"}"#.to_vec())
 }

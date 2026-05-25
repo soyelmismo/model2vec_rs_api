@@ -8,9 +8,11 @@ name = "model2vec-api"
 path = "src/main.rs"
 
 [dependencies]
-# Web framework — no extras, axum already pulls serde_json
-axum = { version = "*", default-features = false, features = ["json", "http1", "tokio"] }
-tokio = { version = "*", features = ["rt-multi-thread", "net", "macros"] }
+# Async runtime — minimal features only
+tokio = { version = "*", features = ["rt-multi-thread", "net", "io-util", "macros"] }
+
+# HTTP/1.1 request parser — already a transitive dep, now made explicit
+httparse = "1"
 
 # Serialization — shared with model2vec-rs (no extra download)
 serde = { version = "*", features = ["derive"] }
@@ -19,12 +21,11 @@ serde_json = "*"
 # Embeddings
 model2vec-rs = { version = "*", default-features = false, features = ["local-only", "fancy-regex"] }
 
-# Error handling — thiserror already pulled by model2vec-rs/tokenizers
+# Error handling — shared with model2vec-rs/tokenizers
 thiserror = "*"
 anyhow = "*"
 
-# Logging — `log` is already a transitive dep of model2vec-rs/tokenizers
-# We wire it ourselves with a zero-dep simple logger (see src/logger.rs)
+# Logging — log is already a transitive dep of model2vec-rs
 log = "*"
 
 [profile.release]

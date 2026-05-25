@@ -1,20 +1,13 @@
-use axum::http::HeaderMap;
 use std::sync::Arc;
 
-use crate::{
-    error::{AppError, Result},
-    models::ModelRegistry,
-};
+use crate::{models::ModelRegistry, server::{Request, Response}};
 
 pub mod embeddings;
 pub mod health;
 pub mod models_list;
 
-/// Shared application state injected into every handler.
-#[derive(Clone)]
 pub struct AppState {
     pub registry: Arc<ModelRegistry>,
-    /// If set, every request must supply `Authorization: Bearer <api_key>`.
     pub api_key: Option<String>,
 }
 
@@ -23,22 +16,28 @@ impl AppState {
         Self { registry, api_key }
     }
 
-    /// Validate the bearer token when `api_key` is configured.
-    pub fn check_auth(&self, headers: &HeaderMap) -> Result<()> {
+    /// Validate Bearer token. Returns Err(Response) when auth fails so
+    /// handlers can do `if let Err(r) = state.check_auth(req) { return r; }`.
+    pub fn check_auth(&self, req: &Request<'_>) -> Result<(), Response> {
         let Some(expected) = &self.api_key else {
             return Ok(());
         };
-
-        let provided = headers
-            .get("authorization")
-            .and_then(|v| v.to_str().ok())
+        // req.body only contains the body; headers are parsed in server.rs and
+        // we pass the raw header block. We need to re-parse the Authorization header.
+        // Since we already store `keep_alive` in Request, the cleanest approach is
+        // to store auth header there too — see server.rs Request struct.
+        // For now we read it from req.auth_header (added below).
+        let provided = req.auth_header
             .and_then(|v| v.strip_prefix("Bearer "))
             .unwrap_or("");
 
         if provided == expected {
             Ok(())
         } else {
-            Err(AppError::Unauthorized)
+            Err(Response::json(
+                401,
+                br#"{"error":{"message":"unauthorized","type":"api_error","code":401}}"#.to_vec(),
+            ))
         }
     }
 }

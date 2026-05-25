@@ -1,28 +1,24 @@
-use axum::{
-    Router,
-    routing::{get, post},
-};
 use std::sync::Arc;
 
 use crate::{
-    handlers::{
-        AppState,
-        embeddings::create_embeddings,
-        health::health,
-        models_list::list_models,
-    },
-    models::ModelRegistry,
+    handlers::{embeddings, health, models_list, AppState},
+    server::{Request, Response, Routable},
 };
 
-pub fn build_with_config(registry: Arc<ModelRegistry>, api_key: Option<String>) -> Router {
-    let state = Arc::new(AppState::new(registry, api_key));
+impl Routable for Arc<AppState> {
+    fn route(self, req: &Request<'_>) -> Response {
+        let path = req.path.split('?').next().unwrap_or(req.path);
 
-    Router::new()
-        .route("/health", get(health))
-        .route("/v1/embeddings", post(create_embeddings))
-        .route("/v1/models", get(list_models))
-        // Convenience aliases (some clients omit /v1)
-        .route("/embeddings", post(create_embeddings))
-        .route("/models", get(list_models))
-        .with_state(state)
+        match (req.method, path) {
+            ("GET",  "/health")                              => health::handle(),
+            ("GET",  "/v1/models")  | ("GET",  "/models")   => models_list::handle(&self, req),
+            ("POST", "/v1/embeddings") | ("POST", "/embeddings") => embeddings::handle(&self, req),
+
+            // Known paths, wrong method
+            (_, "/health" | "/v1/models" | "/models") => Response::method_not_allowed(),
+            (_, "/v1/embeddings" | "/embeddings")      => Response::method_not_allowed(),
+
+            _ => Response::not_found(),
+        }
+    }
 }
