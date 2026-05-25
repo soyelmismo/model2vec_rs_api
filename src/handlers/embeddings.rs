@@ -40,7 +40,9 @@ pub fn handle(state: &AppState, req: &Request<'_>) -> Response {
         }
     };
 
-    let (embeddings, token_counts) = match state.registry.encode(&parsed.model, &texts) {
+    let total_chars: usize = texts.iter().map(|t| t.len()).sum();
+
+    let embeddings = match state.registry.encode(&parsed.model, &texts) {
         Some(v) => v,
         None => {
             let msg = format!(
@@ -51,7 +53,8 @@ pub fn handle(state: &AppState, req: &Request<'_>) -> Response {
         }
     };
 
-    let total_tokens: usize = token_counts.iter().sum();
+    // ~4 chars per token — BPE heuristic, matches model2vec-rs internal tokenizer
+    let approx_tokens = (total_chars / 4).max(1);
 
     let data: Vec<serde_json::Value> = embeddings
         .into_iter()
@@ -70,8 +73,8 @@ pub fn handle(state: &AppState, req: &Request<'_>) -> Response {
         "data": data,
         "model": parsed.model,
         "usage": {
-            "prompt_tokens": total_tokens,
-            "total_tokens": total_tokens
+            "prompt_tokens": approx_tokens,
+            "total_tokens": approx_tokens
         }
     });
 

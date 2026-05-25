@@ -113,7 +113,7 @@ Batch request:
 | `data[].embedding` | `number[]` | The embedding vector (dimension depends on the model). |
 | `data[].index`     | `number`   | Index of the input in the batch (zero-based).          |
 | `model`            | `string`   | The model alias used.                                  |
-| `usage`            | `object`   | Token usage — counted by the model's native tokenizer. |
+| `usage`            | `object`   | Approximate token usage (~4 chars/token heuristic). |
 
 #### Status Codes
 
@@ -455,21 +455,9 @@ PORT=8080 \
 docker compose up -d
 ```
 
-### Using the deploy script
-
-```bash
-# Deploy to a remote server
-./deploy.sh
-
-# Custom port
-./deploy.sh --port 8080
-
-# Custom models
-./deploy.sh --models "base:minishlab/potion-base-8M,code:minishlab/potion-code-16M"
-
-# With environment overrides
-M2V_API_KEY="sk-..." M2V_HF_TOKEN="hf_..." ./deploy.sh
-```
+The container runs a healthcheck every 30s against `GET /health` — the service
+won't receive traffic until the model is loaded and healthy (up to 60s startup
+grace period).
 
 ### Manual Docker
 

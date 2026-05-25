@@ -24,6 +24,8 @@ fn main() -> Result<()> {
         config.api_key.is_some(),
     );
 
+    log::info!("models configured: {:?}", config.models);
+
     let registry = Arc::new(ModelRegistry::load_with_token(
         &config.models,
         config.hf_token.as_deref(),

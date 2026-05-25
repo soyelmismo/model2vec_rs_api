@@ -23,10 +23,7 @@ serde = { version = "*", features = ["derive"] }
 serde_json = "*"
 
 # Embeddings
-model2vec-rs = { version = "*", default-features = false, features = ["local-only", "fancy-regex"] }
-
-# Tokenizer — already a transitive dep via model2vec-rs
-tokenizers = { version = "0.21", default-features = false }
+model2vec-rs = { version = "*", default-features = false, features = ["fancy-regex"] }
 
 # Error handling — shared with model2vec-rs/tokenizers
 thiserror = "*"
