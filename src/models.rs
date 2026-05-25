@@ -6,6 +6,7 @@ use crate::config::ModelConfig;
 
 pub struct ModelRegistry {
     models: HashMap<String, StaticModel>,
+    sorted_aliases: Vec<String>,
 }
 
 impl ModelRegistry {
@@ -30,7 +31,10 @@ impl ModelRegistry {
             }
         }
 
-        Ok(Self { models })
+        let mut sorted_aliases: Vec<String> = models.keys().cloned().collect();
+        sorted_aliases.sort_unstable();
+
+        Ok(Self { models, sorted_aliases })
     }
 
     pub fn encode(&self, alias: &str, texts: &[String]) -> Option<Vec<Vec<f32>>> {
@@ -38,10 +42,8 @@ impl ModelRegistry {
         Some(model.encode(texts))
     }
 
-    pub fn aliases(&self) -> Vec<&str> {
-        let mut names: Vec<&str> = self.models.keys().map(std::string::String::as_str).collect();
-        names.sort_unstable();
-        names
+    pub fn aliases(&self) -> &[String] {
+        &self.sorted_aliases
     }
 }
 

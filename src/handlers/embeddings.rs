@@ -24,10 +24,14 @@ pub fn handle(state: &AppState, req: &Request<'_>) -> Response {
     let parsed: EmbeddingRequest = match serde_json::from_slice(req.body) {
         Ok(v) => v,
         Err(e) => {
-            let msg = format!(
-                "{{\"error\":{{\"message\":\"{e}\",\"type\":\"api_error\",\"code\":400}}}}"
-            );
-            return Response::json(400, msg.into_bytes());
+            let error = serde_json::json!({
+                "error": {
+                    "message": e.to_string(),
+                    "type": "api_error",
+                    "code": 400
+                }
+            });
+            return Response::json(400, serde_json::to_vec(&error).unwrap_or_default());
         }
     };
 
@@ -42,17 +46,19 @@ pub fn handle(state: &AppState, req: &Request<'_>) -> Response {
         }
     };
 
-    let total_chars: usize = texts.iter().map(String::len).sum();
-
     let Some(embeddings) = state.registry.encode(&parsed.model, &texts) else {
-        let msg = format!(
-            "{{\"error\":{{\"message\":\"model '{}' not found\",\"type\":\"api_error\",\"code\":404}}}}",
-            parsed.model
-        );
-        return Response::json(404, msg.into_bytes());
+        let error = serde_json::json!({
+            "error": {
+                "message": format!("model '{}' not found", parsed.model),
+                "type": "api_error",
+                "code": 404
+            }
+        });
+        return Response::json(404, serde_json::to_vec(&error).unwrap_or_default());
     };
 
     // ~4 chars per token — BPE heuristic, matches model2vec-rs internal tokenizer
+    let total_chars: usize = texts.iter().map(String::len).sum();
     let approx_tokens = (total_chars / 4).max(1);
 
     let data: Vec<serde_json::Value> = embeddings
@@ -77,7 +83,7 @@ pub fn handle(state: &AppState, req: &Request<'_>) -> Response {
         }
     });
 
-    Response::json(200, resp.to_string().into_bytes())
+    Response::json(200, serde_json::to_vec(&resp).unwrap_or_default())
 }
 
 #[cfg(test)]

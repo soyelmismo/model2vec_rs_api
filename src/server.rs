@@ -116,15 +116,15 @@ where
         let status = parsed.parse(header_section)?;
         debug_assert!(matches!(status, httparse::Status::Complete(_)));
 
-        let method = parsed.method.unwrap_or("").to_ascii_uppercase();
+        let method = parsed.method.unwrap_or("").to_owned();
         let path = parsed.path.unwrap_or("/").to_owned();
         let http11 = parsed.version.unwrap_or(0) == 1;
 
-        let conn_val: String = header_val(parsed.headers, "connection").to_ascii_lowercase();
+        let conn_val = header_val(parsed.headers, "connection");
         let keep_alive = if http11 {
-            conn_val != "close"
+            !conn_val.eq_ignore_ascii_case("close")
         } else {
-            conn_val == "keep-alive"
+            conn_val.eq_ignore_ascii_case("keep-alive")
         };
 
         let content_length: usize =

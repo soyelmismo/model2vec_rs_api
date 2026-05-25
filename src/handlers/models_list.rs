@@ -6,16 +6,18 @@ pub fn handle(state: &AppState, req: &Request<'_>) -> Response {
         return r;
     }
 
+    let data: Vec<_> = state.registry.aliases().iter().map(|alias| serde_json::json!({
+        "id": alias,
+        "object": "model",
+        "owned_by": "model2vec-api"
+    })).collect();
+
     let body = serde_json::json!({
         "object": "list",
-        "data": state.registry.aliases().iter().map(|alias| serde_json::json!({
-            "id": alias,
-            "object": "model",
-            "owned_by": "model2vec-api"
-        })).collect::<Vec<_>>()
+        "data": data
     });
 
-    Response::json(200, body.to_string().into_bytes())
+    Response::json(200, serde_json::to_vec(&body).unwrap_or_default())
 }
 
 #[cfg(test)]
