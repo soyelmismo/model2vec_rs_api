@@ -8,13 +8,17 @@ name = "model2vec-api"
 path = "src/main.rs"
 
 [dependencies]
-# Async runtime — minimal features only
-tokio = { version = "*", features = ["rt-multi-thread", "net", "io-util", "macros"] }
+# Async runtime — absolute minimum features:
+#   rt-multi-thread: multi-threaded scheduler + spawn
+#   net: TcpListener, TcpStream
+#   (no io-util → no bytes crate)
+#   (no macros → using Runtime::new() manually)
+tokio = { version = "*", features = ["rt-multi-thread", "net"] }
 
-# HTTP/1.1 request parser — already a transitive dep, now made explicit
+# HTTP/1.1 request parser — zero deps, already in lockfile via previous hyper
 httparse = "1"
 
-# Serialization — shared with model2vec-rs (no extra download)
+# Serialization — shared with model2vec-rs (no new download)
 serde = { version = "*", features = ["derive"] }
 serde_json = "*"
 
@@ -25,7 +29,7 @@ model2vec-rs = { version = "*", default-features = false, features = ["local-onl
 thiserror = "*"
 anyhow = "*"
 
-# Logging — log is already a transitive dep of model2vec-rs
+# Logging — log already pulled by model2vec-rs/tokenizers
 log = "*"
 
 [profile.release]
@@ -33,3 +37,4 @@ opt-level = 3
 lto = true
 codegen-units = 1
 strip = true
+panic = "abort"        # smaller binary, no unwinding tables

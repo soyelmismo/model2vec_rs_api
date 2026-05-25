@@ -12,8 +12,7 @@ use config::Config;
 use handlers::AppState;
 use models::ModelRegistry;
 
-#[tokio::main]
-async fn main() -> Result<()> {
+fn main() -> Result<()> {
     load_dotenv();
     logger::init();
 
@@ -31,11 +30,16 @@ async fn main() -> Result<()> {
     )?);
     let state = Arc::new(AppState::new(registry, config.api_key));
 
-    server::serve(&config.listen_addr, state).await?;
+    // Manual runtime — no #[tokio::main] macro, no tokio-macros crate
+    tokio::runtime::Builder::new_multi_thread()
+        .enable_io()
+        .build()?
+        .block_on(server::serve(&config.listen_addr, state))?;
+
     Ok(())
 }
 
-/// Reads `.env` and sets missing env vars — no deps, single-threaded context.
+/// Reads `.env` and sets missing env vars — no deps, called before any threads.
 fn load_dotenv() {
     let Ok(contents) = std::fs::read_to_string(".env") else { return };
     for line in contents.lines() {
@@ -45,7 +49,7 @@ fn load_dotenv() {
             let key = key.trim();
             let val = val.trim().trim_matches('"').trim_matches('\'');
             if std::env::var(key).is_err() {
-                // SAFETY: called before tokio spawns any threads
+                // SAFETY: single-threaded, before tokio runtime starts
                 unsafe { std::env::set_var(key, val) };
             }
         }
