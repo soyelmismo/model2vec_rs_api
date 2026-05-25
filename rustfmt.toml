@@ -1,0 +1,18 @@
+# Rustfmt configuration for model2vec-api
+# Run with: cargo fmt --all
+
+max_width = 100
+tab_spaces = 4
+newline_style = "Unix"
+use_small_heuristics = "Default"
+
+# Imports (stable options only)
+reorder_imports = true
+reorder_modules = true
+
+# Chaining
+chain_width = 80
+
+# Misc
+use_field_init_shorthand = true
+force_explicit_abi = true

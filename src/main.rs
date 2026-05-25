@@ -1,4 +1,5 @@
 use anyhow::Result;
+use std::collections::HashMap;
 use std::sync::Arc;
 
 mod config;
@@ -13,10 +14,10 @@ use handlers::AppState;
 use models::ModelRegistry;
 
 fn main() -> Result<()> {
-    load_dotenv();
+    let dotenv = load_dotenv_values();
     logger::init();
 
-    let config = Config::from_env()?;
+    let config = Config::from_env(&dotenv)?;
     log::info!(
         "starting model2vec-api — listen={} models={} auth={}",
         config.listen_addr,
@@ -41,19 +42,22 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-/// Reads `.env` and sets missing env vars — no deps, called before any threads.
-fn load_dotenv() {
-    let Ok(contents) = std::fs::read_to_string(".env") else { return };
+/// Parse `.env` into a key-value map — no env var mutation, no unsafe.
+fn load_dotenv_values() -> HashMap<String, String> {
+    let Ok(contents) = std::fs::read_to_string(".env") else {
+        return HashMap::new();
+    };
+    let mut map = HashMap::new();
     for line in contents.lines() {
         let line = line.trim();
-        if line.is_empty() || line.starts_with('#') { continue; }
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
         if let Some((key, val)) = line.split_once('=') {
-            let key = key.trim();
-            let val = val.trim().trim_matches('"').trim_matches('\'');
-            if std::env::var(key).is_err() {
-                // SAFETY: single-threaded, before tokio runtime starts
-                unsafe { std::env::set_var(key, val) };
-            }
+            let k = key.trim().to_string();
+            let v = val.trim().trim_matches('"').trim_matches('\'').to_string();
+            let _ = map.entry(k).or_insert(v);
         }
     }
+    map
 }

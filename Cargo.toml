@@ -1,7 +1,12 @@
 [package]
 name = "model2vec-api"
-version = "0.1.0"
+version = "0.0.1"
 edition = "2024"
+description = "Minimal, OpenAI-compatible embeddings server powered by model2vec-rs"
+license = "MIT"
+repository = "https://github.com/MinishLab/model2vec-api"
+keywords = ["embeddings", "model2vec", "openai", "nlp"]
+categories = ["ai", "science"]
 
 [[bin]]
 name = "model2vec-api"
@@ -38,3 +43,7 @@ lto = true
 codegen-units = 1
 strip = true
 panic = "abort"        # smaller binary, no unwinding tables
+
+[lints.rust]
+unsafe_code = "forbid"
+unused_results = "deny"

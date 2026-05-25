@@ -24,7 +24,9 @@ pub fn handle(state: &AppState, req: &Request<'_>) -> Response {
     let parsed: EmbeddingRequest = match serde_json::from_slice(req.body) {
         Ok(v) => v,
         Err(e) => {
-            let msg = format!("{{\"error\":{{\"message\":\"{e}\",\"type\":\"api_error\",\"code\":400}}}}");
+            let msg = format!(
+                "{{\"error\":{{\"message\":\"{e}\",\"type\":\"api_error\",\"code\":400}}}}"
+            );
             return Response::json(400, msg.into_bytes());
         }
     };
@@ -40,17 +42,14 @@ pub fn handle(state: &AppState, req: &Request<'_>) -> Response {
         }
     };
 
-    let total_chars: usize = texts.iter().map(|t| t.len()).sum();
+    let total_chars: usize = texts.iter().map(String::len).sum();
 
-    let embeddings = match state.registry.encode(&parsed.model, &texts) {
-        Some(v) => v,
-        None => {
-            let msg = format!(
-                "{{\"error\":{{\"message\":\"model '{}' not found\",\"type\":\"api_error\",\"code\":404}}}}",
-                parsed.model
-            );
-            return Response::json(404, msg.into_bytes());
-        }
+    let Some(embeddings) = state.registry.encode(&parsed.model, &texts) else {
+        let msg = format!(
+            "{{\"error\":{{\"message\":\"model '{}' not found\",\"type\":\"api_error\",\"code\":404}}}}",
+            parsed.model
+        );
+        return Response::json(404, msg.into_bytes());
     };
 
     // ~4 chars per token — BPE heuristic, matches model2vec-rs internal tokenizer

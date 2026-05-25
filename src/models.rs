@@ -20,8 +20,14 @@ impl ModelRegistry {
                     format!("failed to load model '{}' from '{}'", cfg.alias, cfg.path)
                 })?;
 
-            log::info!("model loaded alias={}", cfg.alias);
-            models.insert(cfg.alias.clone(), model);
+            log::info!("model loaded successfully alias={}", cfg.alias);
+            if let Some(prev) = models.insert(cfg.alias.clone(), model) {
+                log::warn!(
+                    "model alias '{}' was loaded twice — replacing previous instance",
+                    cfg.alias
+                );
+                drop(prev);
+            }
         }
 
         Ok(Self { models })

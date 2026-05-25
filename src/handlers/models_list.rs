@@ -1,5 +1,5 @@
-use crate::server::{Request, Response};
 use crate::handlers::AppState;
+use crate::server::{Request, Response};
 
 pub fn handle(state: &AppState, req: &Request<'_>) -> Response {
     if let Err(r) = state.check_auth(req) {

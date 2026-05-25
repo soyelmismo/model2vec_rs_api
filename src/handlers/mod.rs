@@ -1,6 +1,9 @@
 use std::sync::Arc;
 
-use crate::{models::ModelRegistry, server::{Request, Response}};
+use crate::{
+    models::ModelRegistry,
+    server::{Request, Response},
+};
 
 pub mod embeddings;
 pub mod health;
@@ -12,7 +15,7 @@ pub struct AppState {
 }
 
 impl AppState {
-    pub fn new(registry: Arc<ModelRegistry>, api_key: Option<String>) -> Self {
+    pub const fn new(registry: Arc<ModelRegistry>, api_key: Option<String>) -> Self {
         Self { registry, api_key }
     }
 
@@ -27,9 +30,7 @@ impl AppState {
         // Since we already store `keep_alive` in Request, the cleanest approach is
         // to store auth header there too — see server.rs Request struct.
         // For now we read it from req.auth_header (added below).
-        let provided = req.auth_header
-            .and_then(|v| v.strip_prefix("Bearer "))
-            .unwrap_or("");
+        let provided = req.auth_header.and_then(|v| v.strip_prefix("Bearer ")).unwrap_or("");
 
         if provided == expected {
             Ok(())

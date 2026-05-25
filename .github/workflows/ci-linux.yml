@@ -1,0 +1,62 @@
+name: CI Linux
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    uses: ./.github/workflows/ci.yml
+
+  build:
+    name: Build & Test (linux)
+    needs: quality
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        run: |
+          rustup set profile minimal
+          rustup toolchain install stable
+          rustup default stable
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Check
+        run: cargo check --all-targets
+
+      - name: Test
+        run: cargo test --all-targets
+
+      - name: Build (release)
+        run: cargo build --release
+
+  musl:
+    name: Build (linux-musl)
+    needs: quality
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain (musl)
+        run: |
+          rustup set profile minimal
+          rustup toolchain install stable --target x86_64-unknown-linux-musl
+          rustup default stable
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install musl tools
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+
+      - name: Build (musl release)
+        run: cargo build --release --target x86_64-unknown-linux-musl
