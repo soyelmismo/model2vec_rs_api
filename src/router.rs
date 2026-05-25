@@ -15,8 +15,9 @@ impl Routable for Arc<AppState> {
             ("POST", "/v1/embeddings" | "/embeddings") => embeddings::handle(&self, req),
 
             // Known paths, wrong method
-            (_, "/health" | "/v1/models" | "/models" | "/v1/embeddings" | "/embeddings") =>
-                Response::method_not_allowed(),
+            (_, "/health" | "/v1/models" | "/models" | "/v1/embeddings" | "/embeddings") => {
+                Response::method_not_allowed()
+            }
 
             _ => Response::not_found(),
         }
