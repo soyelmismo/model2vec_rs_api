@@ -1,0 +1,34 @@
+[package]
+name = "model2vec-api"
+version = "0.1.0"
+edition = "2024"
+
+[[bin]]
+name = "model2vec-api"
+path = "src/main.rs"
+
+[dependencies]
+# Web framework — no extras, axum already pulls serde_json
+axum = { version = "*", default-features = false, features = ["json", "http1", "tokio"] }
+tokio = { version = "*", features = ["rt-multi-thread", "net", "macros"] }
+
+# Serialization — shared with model2vec-rs (no extra download)
+serde = { version = "*", features = ["derive"] }
+serde_json = "*"
+
+# Embeddings
+model2vec-rs = { version = "*", default-features = false, features = ["local-only", "fancy-regex"] }
+
+# Error handling — thiserror already pulled by model2vec-rs/tokenizers
+thiserror = "*"
+anyhow = "*"
+
+# Logging — `log` is already a transitive dep of model2vec-rs/tokenizers
+# We wire it ourselves with a zero-dep simple logger (see src/logger.rs)
+log = "*"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true
