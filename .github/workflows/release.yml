@@ -9,12 +9,14 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  quality:
+  # ── Step 1: Lint ──────────────────────────────────────────────────────
+  lint:
     uses: ./.github/workflows/ci.yml
 
+  # ── Step 2: Release ───────────────────────────────────────────────────
   release:
     name: Create Release
-    needs: quality
+    needs: lint
     runs-on: ubuntu-latest
     permissions:
       contents: write

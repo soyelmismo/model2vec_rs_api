@@ -11,12 +11,14 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  quality:
+  # ── Step 1: Lint ──────────────────────────────────────────────────────
+  lint:
     uses: ./.github/workflows/ci.yml
 
-  build:
-    name: Build & Test (linux)
-    needs: quality
+  # ── Step 2: Test ──────────────────────────────────────────────────────
+  test:
+    name: Test
+    needs: lint
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -30,18 +32,33 @@ jobs:
       - name: Rust cache
         uses: Swatinem/rust-cache@v2
 
-      - name: Check
-        run: cargo check --all-targets
-
-      - name: Test
+      - name: Run tests
         run: cargo test --all-targets
+
+  # ── Step 3: Build (release) ───────────────────────────────────────────
+  build:
+    name: Build (release)
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        run: |
+          rustup set profile minimal
+          rustup toolchain install stable
+          rustup default stable
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
 
       - name: Build (release)
         run: cargo build --release
 
+  # ── Step 4: Build (linux-musl) ────────────────────────────────────────
   musl:
     name: Build (linux-musl)
-    needs: quality
+    needs: test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

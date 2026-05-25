@@ -87,3 +87,29 @@ fn parse_level(s: &str) -> LevelFilter {
         _ => LevelFilter::Info,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_level_exact() {
+        assert_eq!(parse_level("error"), LevelFilter::Error);
+        assert_eq!(parse_level("warn"), LevelFilter::Warn);
+        assert_eq!(parse_level("info"), LevelFilter::Info);
+        assert_eq!(parse_level("debug"), LevelFilter::Debug);
+        assert_eq!(parse_level("trace"), LevelFilter::Trace);
+    }
+
+    #[test]
+    fn parse_level_case_insensitive() {
+        assert_eq!(parse_level("ERROR"), LevelFilter::Error);
+        assert_eq!(parse_level("Trace"), LevelFilter::Trace);
+    }
+
+    #[test]
+    fn parse_level_unknown_defaults_to_info() {
+        assert_eq!(parse_level("banana"), LevelFilter::Info);
+        assert_eq!(parse_level(""), LevelFilter::Info);
+    }
+}

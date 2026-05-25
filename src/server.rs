@@ -264,3 +264,64 @@ const fn status_reason(code: u16) -> &'static str {
         _ => "Unknown",
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn find_header_end_returns_position() {
+        let buf = b"GET / HTTP/1.1\r\nHost: localhost\r\n\r\nbody";
+        assert_eq!(find_header_end(buf), Some(31));
+    }
+
+    #[test]
+    fn find_header_end_no_match() {
+        assert_eq!(find_header_end(b"no double crlf here"), None);
+    }
+
+    #[test]
+    fn find_header_end_empty() {
+        assert_eq!(find_header_end(b""), None);
+    }
+
+    #[test]
+    fn status_reason_known_codes() {
+        assert_eq!(status_reason(200), "OK");
+        assert_eq!(status_reason(400), "Bad Request");
+        assert_eq!(status_reason(401), "Unauthorized");
+        assert_eq!(status_reason(404), "Not Found");
+        assert_eq!(status_reason(405), "Method Not Allowed");
+        assert_eq!(status_reason(413), "Payload Too Large");
+        assert_eq!(status_reason(500), "Internal Server Error");
+    }
+
+    #[test]
+    fn status_reason_unknown_default() {
+        assert_eq!(status_reason(999), "Unknown");
+        assert_eq!(status_reason(0), "Unknown");
+    }
+
+    #[test]
+    fn header_val_found() {
+        let raw = b"GET / HTTP/1.1\r\ncontent-type: application/json\r\n\r\n";
+        let mut headers = [httparse::EMPTY_HEADER; 2];
+        let mut req = httparse::Request::new(&mut headers);
+        let _ = req.parse(raw);
+        assert_eq!(header_val(req.headers, "content-type"), "application/json");
+    }
+
+    #[test]
+    fn header_val_not_found() {
+        let raw = b"GET / HTTP/1.1\r\nx-custom: val\r\n\r\n";
+        let mut headers = [httparse::EMPTY_HEADER; 2];
+        let mut req = httparse::Request::new(&mut headers);
+        let _ = req.parse(raw);
+        assert_eq!(header_val(req.headers, "nonexistent"), "");
+    }
+
+    #[test]
+    fn header_val_empty_headers() {
+        assert_eq!(header_val(&[], "anything"), "");
+    }
+}
