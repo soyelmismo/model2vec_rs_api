@@ -9,6 +9,7 @@
 /// I/O helpers (read, `read_exact`, `write_all`) are implemented manually
 /// using the raw `tokio::io::AsyncRead` / `AsyncWrite` traits so we don't
 /// need the `io-util` feature (and therefore don't pull in `bytes`).
+use std::borrow::Cow;
 use std::{io, pin::Pin, sync::Arc, task::Poll};
 use tokio::{
     io::{AsyncRead, AsyncWrite, ReadBuf},
@@ -30,34 +31,28 @@ pub struct Request<'a> {
 
 pub struct Response {
     pub status: u16,
-    pub body: Vec<u8>,
+    pub body: Cow<'static, [u8]>,
     pub content_type: &'static str,
 }
 
 impl Response {
-    pub const fn json(status: u16, body: Vec<u8>) -> Self {
+    pub fn json(status: u16, body: impl Into<Cow<'static, [u8]>>) -> Self {
         Self {
             status,
-            body,
+            body: body.into(),
             content_type: "application/json",
         }
     }
     pub fn not_found() -> Self {
-        Self::json(
-            404,
-            br#"{"error":{"message":"not found","type":"api_error","code":404}}"#.to_vec(),
-        )
+        Self::json(404, br#"{"error":{"message":"not found","type":"api_error","code":404}}"# as &'static [u8])
     }
     pub fn method_not_allowed() -> Self {
-        Self::json(
-            405,
-            br#"{"error":{"message":"method not allowed","type":"api_error","code":405}}"#.to_vec(),
-        )
+        Self::json(405, br#"{"error":{"message":"method not allowed","type":"api_error","code":405}}"# as &'static [u8])
     }
 }
 
 pub trait Routable {
-    fn route(self, req: &Request<'_>) -> Response;
+    fn route(&self, req: &Request<'_>) -> Response;
 }
 
 // ── Server entry point ────────────────────────────────────────────────────────
@@ -163,19 +158,24 @@ where
             body,
             auth_header: auth.as_deref(),
         };
-        let response = Arc::clone(&state).route(&request);
+        let response = state.route(&request);
 
         // 5. Write response
         let conn_out = if keep_alive { "keep-alive" } else { "close" };
-        let head = format!(
-            "HTTP/1.1 {s} {reason}\r\nContent-Type: {ct}\r\nContent-Length: {cl}\r\nConnection: {conn}\r\n\r\n",
-            s = response.status,
-            reason = status_reason(response.status),
-            ct = response.content_type,
-            cl = response.body.len(),
-            conn = conn_out,
-        );
-        write_all(&mut stream, head.as_bytes()).await?;
+        let mut head = Vec::with_capacity(128);
+        let mut ib = ::itoa::Buffer::new();
+        head.extend_from_slice(b"HTTP/1.1 ");
+        head.extend_from_slice(ib.format(response.status).as_bytes());
+        head.push(b' ');
+        head.extend_from_slice(status_reason(response.status).as_bytes());
+        head.extend_from_slice(b"\r\nContent-Type: ");
+        head.extend_from_slice(response.content_type.as_bytes());
+        head.extend_from_slice(b"\r\nContent-Length: ");
+        head.extend_from_slice(ib.format(response.body.len()).as_bytes());
+        head.extend_from_slice(b"\r\nConnection: ");
+        head.extend_from_slice(conn_out.as_bytes());
+        head.extend_from_slice(b"\r\n\r\n");
+        write_all(&mut stream, &head).await?;
         write_all(&mut stream, &response.body).await?;
 
         if !keep_alive {
@@ -184,7 +184,8 @@ where
 
         buf_start = body_end;
         if buf_start > READ_BUF * 2 {
-            drop(buf.drain(..buf_start));
+            buf.copy_within(buf_start.., 0);
+            buf.truncate(buf.len() - buf_start);
             buf_start = 0;
         }
     }

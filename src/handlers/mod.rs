@@ -32,7 +32,7 @@ impl AppState {
         } else {
             Err(Response::json(
                 401,
-                br#"{"error":{"message":"unauthorized","type":"api_error","code":401}}"#.to_vec(),
+                br#"{"error":{"message":"unauthorized","type":"api_error","code":401}}"# as &'static [u8],
             ))
         }
     }

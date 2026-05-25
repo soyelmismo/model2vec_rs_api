@@ -793,6 +793,7 @@ version = "0.0.1"
 dependencies = [
  "anyhow",
  "httparse",
+ "itoa",
  "log",
  "model2vec-rs",
  "serde",

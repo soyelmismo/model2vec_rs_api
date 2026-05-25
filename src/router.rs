@@ -6,13 +6,13 @@ use crate::{
 };
 
 impl Routable for Arc<AppState> {
-    fn route(self, req: &Request<'_>) -> Response {
+    fn route(&self, req: &Request<'_>) -> Response {
         let path = req.path.split('?').next().unwrap_or(req.path);
 
         match (req.method, path) {
             ("GET", "/health") => health::handle(),
-            ("GET", "/v1/models" | "/models") => models_list::handle(&self, req),
-            ("POST", "/v1/embeddings" | "/embeddings") => embeddings::handle(&self, req),
+            ("GET", "/v1/models" | "/models") => models_list::handle(self, req),
+            ("POST", "/v1/embeddings" | "/embeddings") => embeddings::handle(self, req),
 
             // Known paths, wrong method
             (_, "/health" | "/v1/models" | "/models" | "/v1/embeddings" | "/embeddings") => {
@@ -43,56 +43,56 @@ mod tests {
     #[test]
     fn health_get() {
         let state = empty_state();
-        let resp = Arc::clone(&state).route(&req("GET", "/health"));
+        let resp = state.route(&req("GET", "/health"));
         assert_eq!(resp.status, 200);
     }
 
     #[test]
     fn v1_models_get() {
         let state = empty_state();
-        let resp = Arc::clone(&state).route(&req("GET", "/v1/models"));
+        let resp = state.route(&req("GET", "/v1/models"));
         assert_eq!(resp.status, 200);
     }
 
     #[test]
     fn models_get() {
         let state = empty_state();
-        let resp = Arc::clone(&state).route(&req("GET", "/models"));
+        let resp = state.route(&req("GET", "/models"));
         assert_eq!(resp.status, 200);
     }
 
     #[test]
     fn v1_embeddings_post() {
         let state = empty_state();
-        let resp = Arc::clone(&state).route(&req("POST", "/v1/embeddings"));
+        let resp = state.route(&req("POST", "/v1/embeddings"));
         assert_eq!(resp.status, 400);
     }
 
     #[test]
     fn embeddings_post() {
         let state = empty_state();
-        let resp = Arc::clone(&state).route(&req("POST", "/embeddings"));
+        let resp = state.route(&req("POST", "/embeddings"));
         assert_eq!(resp.status, 400);
     }
 
     #[test]
     fn health_wrong_method() {
         let state = empty_state();
-        let resp = Arc::clone(&state).route(&req("POST", "/health"));
+        let resp = state.route(&req("POST", "/health"));
         assert_eq!(resp.status, 405);
     }
 
     #[test]
     fn models_wrong_method() {
         let state = empty_state();
-        let resp = Arc::clone(&state).route(&req("POST", "/v1/models"));
+        let resp = state.route(&req("POST", "/v1/models"));
         assert_eq!(resp.status, 405);
     }
 
     #[test]
     fn unknown_path() {
         let state = empty_state();
-        let resp = Arc::clone(&state).route(&req("GET", "/unknown"));
+        let resp = state.route(&req("GET", "/unknown"));
         assert_eq!(resp.status, 404);
     }
 
@@ -100,7 +100,7 @@ mod tests {
     fn query_string_stripped() {
         let state = empty_state();
         let req = Request { method: "GET", path: "/health?token=x", body: b"{}", auth_header: None };
-        let resp = Arc::clone(&state).route(&req);
+        let resp = state.route(&req);
         assert_eq!(resp.status, 200);
     }
 }

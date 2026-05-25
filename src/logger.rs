@@ -78,13 +78,17 @@ pub fn init() {
     log::set_max_level(level);
 }
 
-fn parse_level(s: &str) -> LevelFilter {
-    match s.to_ascii_lowercase().as_str() {
-        "error" => LevelFilter::Error,
-        "warn" => LevelFilter::Warn,
-        "debug" => LevelFilter::Debug,
-        "trace" => LevelFilter::Trace,
-        _ => LevelFilter::Info,
+const fn parse_level(s: &str) -> LevelFilter {
+    if s.eq_ignore_ascii_case("error") {
+        LevelFilter::Error
+    } else if s.eq_ignore_ascii_case("warn") {
+        LevelFilter::Warn
+    } else if s.eq_ignore_ascii_case("debug") {
+        LevelFilter::Debug
+    } else if s.eq_ignore_ascii_case("trace") {
+        LevelFilter::Trace
+    } else {
+        LevelFilter::Info
     }
 }
 

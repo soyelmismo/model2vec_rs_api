@@ -21,6 +21,7 @@ model2vec-rs = { version = "0.2", default-features = false, features = ["hf-hub"
 thiserror = "2.0"
 anyhow = "1.0"
 log = "0.4"
+itoa = "1"
 
 [profile.release]
 opt-level = 3

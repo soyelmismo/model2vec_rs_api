@@ -52,7 +52,7 @@ mod tests {
         let state = empty_state();
         let resp = handle(&state, &dummy_req(None));
         assert_eq!(resp.status, 200);
-        let body = std::str::from_utf8(&resp.body).unwrap();
+        let body = std::str::from_utf8(resp.body.as_ref()).unwrap();
         assert!(body.contains("\"object\":\"list\""));
     }
 
