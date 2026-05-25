@@ -8,10 +8,10 @@ use std::env;
 /// Optional env vars:
 ///   `M2V_MODELS`       — comma-separated `<alias>:<hf_repo_or_local_path>` entries.
 ///                      Default: base:minishlab/potion-base-8M
-///   M2V_LISTEN_ADDR  — host:port to bind (default: 0.0.0.0:22671)
-///   M2V_API_KEY      — bearer token (disabled if unset)
-///   M2V_HF_TOKEN     — Hugging Face token for private models
-///   M2V_LOG_LEVEL    — log level: error | warn | info | debug | trace (default: info)
+///   `M2V_LISTEN_ADDR`  — host:port to bind (default: 0.0.0.0:22671)
+///   `M2V_API_KEY`      — bearer token (disabled if unset)
+///   `M2V_HF_TOKEN`     — Hugging Face token for private models
+///   `M2V_LOG_LEVEL`    — log level: error | warn | info | debug | trace (default: info)
 #[derive(Debug, Clone)]
 pub struct Config {
     pub listen_addr: String,

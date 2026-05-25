@@ -39,7 +39,7 @@ impl ModelRegistry {
     }
 
     pub fn aliases(&self) -> Vec<&str> {
-        let mut names: Vec<&str> = self.models.keys().map(|s| s.as_str()).collect();
+        let mut names: Vec<&str> = self.models.keys().map(std::string::String::as_str).collect();
         names.sort_unstable();
         names
     }

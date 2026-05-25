@@ -13,29 +13,14 @@ name = "model2vec-api"
 path = "src/main.rs"
 
 [dependencies]
-# Async runtime — absolute minimum features:
-#   rt-multi-thread: multi-threaded scheduler + spawn
-#   net: TcpListener, TcpStream
-#   (no io-util → no bytes crate)
-#   (no macros → using Runtime::new() manually)
-tokio = { version = "*", features = ["rt-multi-thread", "net"] }
-
-# HTTP/1.1 request parser — zero deps, already in lockfile via previous hyper
-httparse = "1"
-
-# Serialization — shared with model2vec-rs (no new download)
-serde = { version = "*", features = ["derive"] }
-serde_json = "*"
-
-# Embeddings, hf-hub feature is required to download models.
-model2vec-rs = { version = "*", default-features = false, features = ["hf-hub", "fancy-regex"] }
-
-# Error handling — shared with model2vec-rs/tokenizers
-thiserror = "*"
-anyhow = "*"
-
-# Logging — log already pulled by model2vec-rs/tokenizers
-log = "*"
+tokio = { version = "1.52", features = ["rt-multi-thread", "net"] }
+httparse = "1.10"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+model2vec-rs = { version = "0.2", default-features = false, features = ["hf-hub", "fancy-regex"] }
+thiserror = "2.0"
+anyhow = "1.0"
+log = "0.4"
 
 [profile.release]
 opt-level = 3
@@ -47,3 +32,8 @@ panic = "abort"        # smaller binary, no unwinding tables
 [lints.rust]
 unsafe_code = "forbid"
 unused_results = "deny"
+
+[lints.clippy]
+pedantic = "warn"
+nursery = "warn"
+cargo = "warn"

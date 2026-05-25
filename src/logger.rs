@@ -1,4 +1,4 @@
-/// Minimal logger that writes to stderr, controlled by RUST_LOG env var.
+/// Minimal logger that writes to stderr, controlled by `RUST_LOG` env var.
 /// Replaces tracing-subscriber with zero additional dependencies.
 /// Supports: error, warn, info (default), debug, trace
 use log::{LevelFilter, Log, Metadata, Record};
@@ -65,7 +65,7 @@ fn days_to_ymd(mut days: u64) -> (u64, u64, u64) {
     (year, month, days + 1)
 }
 
-fn is_leap(year: u64) -> bool {
+const fn is_leap(year: u64) -> bool {
     year.is_multiple_of(4) && !year.is_multiple_of(100) || year.is_multiple_of(400)
 }
 
@@ -82,7 +82,6 @@ fn parse_level(s: &str) -> LevelFilter {
     match s.to_ascii_lowercase().as_str() {
         "error" => LevelFilter::Error,
         "warn" => LevelFilter::Warn,
-        "info" => LevelFilter::Info,
         "debug" => LevelFilter::Debug,
         "trace" => LevelFilter::Trace,
         _ => LevelFilter::Info,

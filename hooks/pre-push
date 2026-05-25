@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# Pre-push hook — rejects push if fmt or clippy fails
+# Install:  cp hooks/pre-push .git/hooks/pre-push && chmod +x .git/hooks/pre-push
+
+set -euo pipefail
+
+echo "🔍 Pre-push quality gate — fmt + clippy..."
+cargo fmt --all --check || {
+    echo "❌ Format check failed. Run 'cargo fmt --all' to fix."
+    exit 1
+}
+cargo clippy --all-targets || {
+    echo "❌ Clippy failed. Fix warnings before pushing."
+    exit 1
+}
+echo "✅ Quality gate passed — good to push."

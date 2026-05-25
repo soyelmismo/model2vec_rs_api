@@ -789,7 +789,7 @@ dependencies = [
 
 [[package]]
 name = "model2vec-api"
-version = "0.1.0"
+version = "0.0.1"
 dependencies = [
  "anyhow",
  "httparse",

@@ -6,8 +6,8 @@
 ///   - One tokio task per connection for full concurrency
 ///   - Correct Connection: close / keep-alive negotiation
 ///
-/// I/O helpers (read, read_exact, write_all) are implemented manually
-/// using the raw tokio::io::AsyncRead / AsyncWrite traits so we don't
+/// I/O helpers (read, `read_exact`, `write_all`) are implemented manually
+/// using the raw `tokio::io::AsyncRead` / `AsyncWrite` traits so we don't
 /// need the `io-util` feature (and therefore don't pull in `bytes`).
 use std::{io, pin::Pin, sync::Arc, task::Poll};
 use tokio::{
@@ -35,7 +35,7 @@ pub struct Response {
 }
 
 impl Response {
-    pub fn json(status: u16, body: Vec<u8>) -> Self {
+    pub const fn json(status: u16, body: Vec<u8>) -> Self {
         Self {
             status,
             body,
