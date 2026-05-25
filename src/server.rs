@@ -30,8 +30,6 @@ pub struct Request<'a> {
     pub method: &'a str,
     pub path: &'a str,
     pub body: &'a [u8],
-    #[allow(dead_code)]
-    pub keep_alive: bool,
     pub auth_header: Option<&'a str>,
 }
 
@@ -150,19 +148,19 @@ where
             method: &method,
             path: &path,
             body,
-            keep_alive,
             auth_header: auth.as_deref(),
         };
         let response = Arc::clone(&state).route(&request);
 
         // 5. Write response
+        let conn_out = if keep_alive { "keep-alive" } else { "close" };
         let head = format!(
             "HTTP/1.1 {s} {reason}\r\nContent-Type: {ct}\r\nContent-Length: {cl}\r\nConnection: {conn}\r\n\r\n",
             s      = response.status,
             reason = status_reason(response.status),
             ct     = response.content_type,
             cl     = response.body.len(),
-            conn   = if keep_alive { "keep-alive" } else { "close" },
+            conn   = conn_out,
         );
         write_all(&mut stream, head.as_bytes()).await?;
         write_all(&mut stream, &response.body).await?;

@@ -3,14 +3,15 @@
 # Zero-config deploy:  docker compose up -d
 # Serves minishlab/potion-base-8M on port 22671 by default.
 #
-# To load multiple models set MODELS in a .env file:
-#   MODELS=base:minishlab/potion-base-8M,code:minishlab/potion-code-16M
+# All env vars use the M2V_ prefix to avoid collisions on the host.
 #
-# Local models: mount the host directory and use /models/<dir> as path:
-#   MODELS=mymodel:/models/my-local-model
+# To load multiple models:
+#   M2V_MODELS=base:minishlab/potion-base-8M,code:minishlab/potion-code-16M
 #
-# Optional auth:  API_KEY=your-secret-key
-# Private models: HF_TOKEN=hf_...
+# Local models (bind-mount):
+#   volumes:
+#     - /host/path:/models/my-model:ro
+#   M2V_MODELS=mymodel:/models/my-model
 
 services:
   model2vec-api:
@@ -23,30 +24,16 @@ services:
       - "${PORT:-22671}:22671"
 
     environment:
-      # Comma-separated alias:hf_repo_or_local_path entries.
-      # The alias is what clients pass as the `model` field in API requests.
-      # Default: serves potion-base-8M under the alias "base".
-      MODELS: "${MODELS:-base:minishlab/potion-base-8M}"
+      M2V_MODELS: "${M2V_MODELS:-base:minishlab/potion-base-8M}"
+      M2V_LISTEN_ADDR: "0.0.0.0:22671"
+      M2V_API_KEY: "${M2V_API_KEY:-}"
+      M2V_HF_TOKEN: "${M2V_HF_TOKEN:-}"
+      M2V_LOG_LEVEL: "${M2V_LOG_LEVEL:-info}"
 
-      LISTEN_ADDR: "0.0.0.0:22671"
-
-      # Bearer token for all API requests (leave unset to disable auth)
-      API_KEY: "${API_KEY:-}"
-
-      # Hugging Face token for private/gated models (leave unset if not needed)
-      HF_TOKEN: "${HF_TOKEN:-}"
-
-      # Tracing/log level: error | warn | info | debug | trace
-      RUST_LOG: "${LOG_LEVEL:-info}"
-
-    # Models downloaded from HuggingFace are cached in this volume so
-    # subsequent restarts don't re-download them.
     volumes:
       - model-cache:/models
 
-    # Distroless nonroot uid
     user: "65532:65532"
-
     restart: unless-stopped
 
     healthcheck:
@@ -54,7 +41,7 @@ services:
       interval: 30s
       timeout: 5s
       retries: 3
-      start_period: 60s   # allow time for model download on first run
+      start_period: 60s
 
 volumes:
   model-cache:

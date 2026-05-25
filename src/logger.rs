@@ -75,7 +75,7 @@ fn is_leap(y: u64) -> bool {
 static LOGGER: OnceLock<SimpleLogger> = OnceLock::new();
 
 pub fn init() {
-    let level = parse_level(std::env::var("RUST_LOG").as_deref().unwrap_or("info"));
+    let level = parse_level(std::env::var("M2V_LOG_LEVEL").as_deref().unwrap_or("info"));
     let logger = LOGGER.get_or_init(|| SimpleLogger { max_level: level });
     log::set_logger(logger).ok();
     log::set_max_level(level);

@@ -2,49 +2,45 @@ use anyhow::{Context, Result};
 use std::env;
 
 /// Configuration loaded entirely from environment variables.
+/// All vars are prefixed with `M2V_` to avoid collisions on shared hosts.
 ///
 /// Optional env vars:
-///   MODELS       — comma-separated list of `<alias>:<hf_repo_or_local_path>` entries.
-///                  Default: base:minishlab/potion-base-8M
-///                  Example: MODELS=base:minishlab/potion-base-8M,code:minishlab/potion-code-16M
-///   LISTEN_ADDR  — host:port to bind (default: 0.0.0.0:22671)
-///   API_KEY      — bearer token required on all requests (disabled if unset)
-///   HF_TOKEN     — Hugging Face API token for private/gated models
-///   RUST_LOG     — tracing filter string (default: info)
+///   M2V_MODELS       — comma-separated `<alias>:<hf_repo_or_local_path>` entries.
+///                      Default: base:minishlab/potion-base-8M
+///   M2V_LISTEN_ADDR  — host:port to bind (default: 0.0.0.0:22671)
+///   M2V_API_KEY      — bearer token (disabled if unset)
+///   M2V_HF_TOKEN     — Hugging Face token for private models
+///   M2V_LOG_LEVEL    — log level: error | warn | info | debug | trace (default: info)
 #[derive(Debug, Clone)]
 pub struct Config {
     pub listen_addr: String,
     pub models: Vec<ModelConfig>,
     pub api_key: Option<String>,
-    /// Reserved: passed to the model loader for private HuggingFace models.
     pub hf_token: Option<String>,
 }
 
 #[derive(Debug, Clone)]
 pub struct ModelConfig {
-    /// The alias used as the `model` field in OpenAI API requests, e.g. "base"
     pub alias: String,
-    /// HuggingFace repo ID (e.g. "minishlab/potion-base-8M") or absolute local path
     pub path: String,
 }
 
 impl Config {
     pub fn from_env() -> Result<Self> {
         let listen_addr =
-            env::var("LISTEN_ADDR").unwrap_or_else(|_| "0.0.0.0:22671".to_string());
+            env::var("M2V_LISTEN_ADDR").unwrap_or_else(|_| "0.0.0.0:22671".to_string());
 
-        let models_raw = env::var("MODELS")
+        let models_raw = env::var("M2V_MODELS")
             .unwrap_or_else(|_| "base:minishlab/potion-base-8M".to_string());
 
         let models = parse_models(&models_raw)?;
 
-        // models can only be empty if MODELS was explicitly set to an empty string
         if models.is_empty() {
-            anyhow::bail!("MODELS must contain at least one entry");
+            anyhow::bail!("M2V_MODELS must contain at least one entry");
         }
 
-        let api_key = env::var("API_KEY").ok().filter(|s| !s.is_empty());
-        let hf_token = env::var("HF_TOKEN").ok().filter(|s| !s.is_empty());
+        let api_key = env::var("M2V_API_KEY").ok().filter(|s| !s.is_empty());
+        let hf_token = env::var("M2V_HF_TOKEN").ok().filter(|s| !s.is_empty());
 
         Ok(Self {
             listen_addr,
@@ -55,7 +51,6 @@ impl Config {
     }
 }
 
-/// Parse `alias:path,alias2:path2,...` into a list of `ModelConfig`.
 fn parse_models(raw: &str) -> Result<Vec<ModelConfig>> {
     raw.split(',')
         .filter(|s| !s.trim().is_empty())
@@ -64,7 +59,7 @@ fn parse_models(raw: &str) -> Result<Vec<ModelConfig>> {
             let (alias, path) = entry
                 .split_once(':')
                 .with_context(|| {
-                    format!("invalid MODELS entry '{entry}' — expected <alias>:<path>")
+                    format!("invalid M2V_MODELS entry '{entry}' — expected <alias>:<path>")
                 })?;
             Ok(ModelConfig {
                 alias: alias.trim().to_string(),

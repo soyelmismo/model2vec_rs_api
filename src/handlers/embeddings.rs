@@ -3,8 +3,6 @@ use serde::Deserialize;
 use crate::handlers::AppState;
 use crate::server::{Request, Response};
 
-// ── OpenAI-compatible request types ──────────────────────────────────────────
-
 #[derive(Deserialize)]
 #[serde(untagged)]
 enum EmbeddingInput {
@@ -12,26 +10,17 @@ enum EmbeddingInput {
     Batch(Vec<String>),
 }
 
-/// OpenAI Embeddings request body.
-/// Fields beyond `model` and `input` are accepted for API compatibility.
 #[derive(Deserialize)]
-#[allow(dead_code)]
 struct EmbeddingRequest {
     model: String,
     input: EmbeddingInput,
-    encoding_format: Option<String>,
-    dimensions: Option<usize>,
-    user: Option<String>,
 }
-
-// ── Handler ───────────────────────────────────────────────────────────────────
 
 pub fn handle(state: &AppState, req: &Request<'_>) -> Response {
     if let Err(r) = state.check_auth(req) {
         return r;
     }
 
-    // Parse JSON body
     let parsed: EmbeddingRequest = match serde_json::from_slice(req.body) {
         Ok(v) => v,
         Err(e) => {
@@ -51,10 +40,8 @@ pub fn handle(state: &AppState, req: &Request<'_>) -> Response {
         }
     };
 
-    let total_chars: usize = texts.iter().map(|t| t.len()).sum();
-
-    let embeddings = match state.registry.encode(&parsed.model, &texts) {
-        Some(e) => e,
+    let (embeddings, token_counts) = match state.registry.encode(&parsed.model, &texts) {
+        Some(v) => v,
         None => {
             let msg = format!(
                 "{{\"error\":{{\"message\":\"model '{}' not found\",\"type\":\"api_error\",\"code\":404}}}}",
@@ -64,9 +51,8 @@ pub fn handle(state: &AppState, req: &Request<'_>) -> Response {
         }
     };
 
-    let approx_tokens = (total_chars / 4).max(1);
+    let total_tokens: usize = token_counts.iter().sum();
 
-    // Build response with serde_json
     let data: Vec<serde_json::Value> = embeddings
         .into_iter()
         .enumerate()
@@ -84,8 +70,8 @@ pub fn handle(state: &AppState, req: &Request<'_>) -> Response {
         "data": data,
         "model": parsed.model,
         "usage": {
-            "prompt_tokens": approx_tokens,
-            "total_tokens": approx_tokens
+            "prompt_tokens": total_tokens,
+            "total_tokens": total_tokens
         }
     });
 
