@@ -79,3 +79,80 @@ pub fn handle(state: &AppState, req: &Request<'_>) -> Response {
 
     Response::json(200, resp.to_string().into_bytes())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::ModelRegistry;
+    use crate::server::Request;
+    use std::sync::Arc;
+
+    fn empty_state() -> AppState {
+        let registry = ModelRegistry::load_with_token(&[], None).unwrap();
+        AppState::new(Arc::new(registry), None)
+    }
+
+    fn authed_state(key: &str) -> AppState {
+        let registry = ModelRegistry::load_with_token(&[], None).unwrap();
+        AppState::new(Arc::new(registry), Some(key.to_string()))
+    }
+
+    fn req(body: &'static [u8], auth: Option<&'static str>) -> Request<'static> {
+        Request { method: "POST", path: "/v1/embeddings", body, auth_header: auth }
+    }
+
+    #[test]
+    fn invalid_json_returns_400() {
+        let state = empty_state();
+        let resp = handle(&state, &req(b"not json", None));
+        assert_eq!(resp.status, 400);
+    }
+
+    #[test]
+    fn empty_single_input_returns_400() {
+        let state = empty_state();
+        let body = br#"{"model":"x","input":""}"#;
+        let resp = handle(&state, &req(body, None));
+        assert_eq!(resp.status, 400);
+    }
+
+    #[test]
+    fn empty_batch_input_returns_400() {
+        let state = empty_state();
+        let body = br#"{"model":"x","input":[]}"#;
+        let resp = handle(&state, &req(body, None));
+        assert_eq!(resp.status, 400);
+    }
+
+    #[test]
+    fn missing_model_returns_404() {
+        let state = empty_state();
+        let body = br#"{"model":"nonexistent","input":"hello"}"#;
+        let resp = handle(&state, &req(body, None));
+        assert_eq!(resp.status, 404);
+    }
+
+    #[test]
+    fn auth_rejects_wrong_token() {
+        let state = authed_state("secret");
+        let body = br#"{"model":"x","input":"hello"}"#;
+        let resp = handle(&state, &req(body, Some("Bearer wrong")));
+        assert_eq!(resp.status, 401);
+    }
+
+    #[test]
+    fn auth_accepts_correct_token() {
+        let state = authed_state("secret");
+        let body = br#"{"model":"nonexistent","input":"hello"}"#;
+        let resp = handle(&state, &req(body, Some("Bearer secret")));
+        assert_eq!(resp.status, 404);
+    }
+
+    #[test]
+    fn auth_disabled_allows_any_token() {
+        let state = empty_state();
+        let body = br#"{"model":"nonexistent","input":"hello"}"#;
+        let resp = handle(&state, &req(body, Some("Bearer anything")));
+        assert_eq!(resp.status, 404);
+    }
+}

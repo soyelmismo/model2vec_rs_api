@@ -44,3 +44,24 @@ impl ModelRegistry {
         names
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn empty_registry() -> ModelRegistry {
+        ModelRegistry::load_with_token(&[], None).unwrap()
+    }
+
+    #[test]
+    fn encode_missing_model_returns_none() {
+        let reg = empty_registry();
+        assert!(reg.encode("nonexistent", &["text"].map(|s| s.to_string())).is_none());
+    }
+
+    #[test]
+    fn aliases_empty_when_no_models() {
+        let reg = empty_registry();
+        assert!(reg.aliases().is_empty());
+    }
+}
