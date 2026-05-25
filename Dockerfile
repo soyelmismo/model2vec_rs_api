@@ -11,16 +11,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /build
 
-# Cache dependency layer: copy manifests, build a dummy main, then overwrite.
+# Cache dependencies with BuildKit — Docker manages this internally,
+# no host mount needed. Portable across machines and CI/CD.
 COPY Cargo.toml Cargo.lock ./
-RUN mkdir src && echo 'fn main(){}' > src/main.rs \
-    && cargo build --release \
-    && rm src/main.rs
-
-# Build the real binary
 COPY src ./src
-RUN touch src/main.rs \
-    && cargo build --release
+RUN --mount=type=cache,target=/build/target \
+    --mount=type=cache,target=/usr/local/cargo/registry \
+    cargo build --release && \
+    cp target/release/model2vec-api /model2vec-api
 
 # ─── Stage 2: Distroless runtime ─────────────────────────────────────────────
 # gcr.io/distroless/cc-debian13 contains glibc + libgcc — nothing else.
@@ -30,8 +28,8 @@ FROM gcr.io/distroless/cc-debian13:nonroot
 # Copy CA certificates so HTTPS (HuggingFace downloads) works at runtime
 COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 
-# Copy the compiled binary
-COPY --from=builder /build/target/release/model2vec-api /model2vec-api
+# Copy the compiled binary (placed at /model2vec-api by the builder's cp step)
+COPY --from=builder /model2vec-api /model2vec-api
 
 # Models are mounted at /models — users can bind-mount local model directories.
 VOLUME ["/models"]

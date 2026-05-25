@@ -22,8 +22,8 @@ httparse = "1"
 serde = { version = "*", features = ["derive"] }
 serde_json = "*"
 
-# Embeddings
-model2vec-rs = { version = "*", default-features = false, features = ["fancy-regex"] }
+# Embeddings, hf-hub feature is required to download models.
+model2vec-rs = { version = "*", default-features = false, features = ["hf-hub", "fancy-regex"] }
 
 # Error handling — shared with model2vec-rs/tokenizers
 thiserror = "*"
