@@ -1,6 +1,7 @@
 # model2vec-api — API Reference
 
-> Minimal, OpenAI-compatible embeddings server powered by [model2vec-rs](https://github.com/MinishLab/model2vec-rs).
+> Minimal, OpenAI-compatible embeddings server powered by
+> [model2vec-rs](https://github.com/MinishLab/model2vec-rs).
 >
 > **No frameworks.** No hyper, axum, or tower — just raw HTTP/1.1 over Tokio.
 
@@ -11,9 +12,7 @@
 - [Quick Start](#quick-start)
 - [Endpoints](#endpoints)
   - [POST /v1/embeddings](#post-v1embeddings)
-  - [POST /embeddings](#post-embeddings)
   - [GET /v1/models](#get-v1models)
-  - [GET /models](#get-models)
   - [GET /health](#get-health)
 - [Authentication](#authentication)
 - [Configuration](#configuration)
@@ -50,16 +49,19 @@ curl -X POST http://localhost:22671/v1/embeddings \
 
 ### POST `/v1/embeddings`
 
-Creates an embedding vector representing the input text. Fully compatible with the [OpenAI Embeddings API](https://platform.openai.com/docs/api-reference/embeddings) schema.
+Creates an embedding vector representing the input text. Fully compatible with
+the
+[OpenAI Embeddings API](https://platform.openai.com/docs/api-reference/embeddings)
+schema.
 
 **Also available at:** `POST /embeddings`
 
 #### Request Body
 
-| Field   | Type                 | Required | Description                                                        |
-|---------|----------------------|----------|--------------------------------------------------------------------|
-| `model` | `string`             | **yes**  | Model alias (as defined in the `M2V_MODELS` env var, e.g. `"base"`).  |
-| `input` | `string` \| `string[]` | **yes**  | Text to embed. Accepts a single string or a batch array of strings. |
+| Field   | Type                   | Required | Description                                                          |
+| ------- | ---------------------- | -------- | -------------------------------------------------------------------- |
+| `model` | `string`               | **yes**  | Model alias (as defined in the `M2V_MODELS` env var, e.g. `"base"`). |
+| `input` | `string` \| `string[]` | **yes**  | Text to embed. Accepts a single string or a batch array of strings.  |
 
 #### Example Request
 
@@ -103,24 +105,24 @@ Batch request:
 }
 ```
 
-| Field            | Type      | Description                                               |
-|------------------|-----------|-----------------------------------------------------------|
-| `object`         | `string`  | Always `"list"`.                                          |
-| `data`           | `array`   | Array of embedding objects, one per input string.         |
-| `data[].object`  | `string`  | Always `"embedding"`.                                     |
-| `data[].embedding` | `number[]` | The embedding vector (dimension depends on the model).  |
-| `data[].index`   | `number`  | Index of the input in the batch (zero-based).             |
-| `model`          | `string`  | The model alias used.                                     |
-| `usage`          | `object`  | Token usage — counted by the model's native tokenizer. |
+| Field              | Type       | Description                                            |
+| ------------------ | ---------- | ------------------------------------------------------ |
+| `object`           | `string`   | Always `"list"`.                                       |
+| `data`             | `array`    | Array of embedding objects, one per input string.      |
+| `data[].object`    | `string`   | Always `"embedding"`.                                  |
+| `data[].embedding` | `number[]` | The embedding vector (dimension depends on the model). |
+| `data[].index`     | `number`   | Index of the input in the batch (zero-based).          |
+| `model`            | `string`   | The model alias used.                                  |
+| `usage`            | `object`   | Token usage — counted by the model's native tokenizer. |
 
 #### Status Codes
 
-| Code | Description                                                      |
-|------|------------------------------------------------------------------|
-| 200  | Embeddings generated successfully.                               |
+| Code | Description                                                        |
+| ---- | ------------------------------------------------------------------ |
+| 200  | Embeddings generated successfully.                                 |
 | 400  | Invalid request body (malformed JSON, empty input, missing field). |
-| 401  | Authentication required (see [Authentication](#authentication)).  |
-| 404  | Model alias not found (not in the configured `M2V_MODELS` list).     |
+| 401  | Authentication required (see [Authentication](#authentication)).   |
+| 404  | Model alias not found (not in the configured `M2V_MODELS` list).   |
 
 ---
 
@@ -130,7 +132,7 @@ Lists all loaded models and their aliases. OpenAI-compatible schema.
 
 **Also available at:** `GET /models`
 
-#### Example Response
+#### Models Response
 
 ```json
 {
@@ -150,11 +152,11 @@ Lists all loaded models and their aliases. OpenAI-compatible schema.
 }
 ```
 
-#### Status Codes
+#### Models Status Codes
 
-| Code | Description                            |
-|------|----------------------------------------|
-| 200  | Models listed successfully.            |
+| Code | Description                              |
+| ---- | ---------------------------------------- |
+| 200  | Models listed successfully.              |
 | 401  | Authentication required (if configured). |
 
 ---
@@ -163,7 +165,7 @@ Lists all loaded models and their aliases. OpenAI-compatible schema.
 
 Simple health-check endpoint. Does **not** require authentication.
 
-#### Example Response
+#### Health Response
 
 ```json
 {
@@ -171,17 +173,18 @@ Simple health-check endpoint. Does **not** require authentication.
 }
 ```
 
-#### Status Codes
+#### Health Status Codes
 
-| Code | Description              |
-|------|--------------------------|
-| 200  | Service is healthy.      |
+| Code | Description         |
+| ---- | ------------------- |
+| 200  | Service is healthy. |
 
 ---
 
 ## Authentication
 
-Authentication is **optional**. When enabled, all API requests (except `/health`) must include a `Bearer` token in the `Authorization` header.
+Authentication is **optional**. When enabled, all API requests (except
+`/health`) must include a `Bearer` token in the `Authorization` header.
 
 ### Enable Authentication
 
@@ -218,24 +221,26 @@ curl -X POST http://localhost:22671/v1/embeddings \
 
 All configuration is done through environment variables.
 
-| Variable      | Default                        | Description                                                           |
-|---------------|--------------------------------|-----------------------------------------------------------------------|
-| `M2V_MODELS`      | `base:minishlab/potion-base-8M` | Comma-separated list of `alias:path` entries (see below).           |
-| `M2V_LISTEN_ADDR` | `0.0.0.0:22671`               | Host and port the server binds to.                                    |
-| `M2V_API_KEY`     | _(disabled)_                   | Bearer token required on all API requests. Leave unset to disable auth. |
-| `M2V_HF_TOKEN`    | _(none)_                       | Hugging Face token for private or gated models.                       |
-| `M2V_LOG_LEVEL`   | `info`                         | Log level: `error`, `warn`, `info`, `debug`, `trace`.                  |
+| Variable          | Default                         | Description                                                             |
+| ----------------- | ------------------------------- | ----------------------------------------------------------------------- |
+| `M2V_MODELS`      | `base:minishlab/potion-base-8M` | Comma-separated list of `alias:path` entries (see below).               |
+| `M2V_LISTEN_ADDR` | `0.0.0.0:22671`                 | Host and port the server binds to.                                      |
+| `M2V_API_KEY`     | _(disabled)_                    | Bearer token required on all API requests. Leave unset to disable auth. |
+| `M2V_HF_TOKEN`    | _(none)_                        | Hugging Face token for private or gated models.                         |
+| `M2V_LOG_LEVEL`   | `info`                          | Log level: `error`, `warn`, `info`, `debug`, `trace`.                   |
 
 ### Model Configuration Syntax
 
-```
+```text
 M2V_MODELS=<alias>:<path>[,<alias>:<path>...]
 ```
 
-- **`<alias>`** — a short name used in the `model` field of API requests (e.g. `"base"`, `"code"`, `"large"`).
-- **`<path>`** — a Hugging Face repo ID (e.g. `minishlab/potion-base-8M`) or an absolute path to a local model directory.
+- **`<alias>`** — a short name used in the `model` field of API requests (e.g.
+  `"base"`, `"code"`, `"large"`).
+- **`<path>`** — a Hugging Face repo ID (e.g. `minishlab/potion-base-8M`) or an
+  absolute path to a local model directory.
 
-#### Examples
+#### Configuration Examples
 
 ```bash
 # Single model (default)
@@ -272,25 +277,30 @@ M2V_LOG_LEVEL=debug
 
 ### How Models Are Loaded
 
-Models are loaded **at startup** based on the `M2V_MODELS` environment variable. Each model alias maps to either:
+Models are loaded **at startup** based on the `M2V_MODELS` environment variable.
+Each model alias maps to either:
 
-1. **A Hugging Face repo** — downloaded and cached locally on first load (e.g., `minishlab/potion-base-8M`).
-2. **A local path** — must be an absolute path inside the container (e.g., `/models/my-model`).
+1. **A Hugging Face repo** — downloaded and cached locally on first load (e.g.,
+   `minishlab/potion-base-8M`).
+2. **A local path** — must be an absolute path inside the container (e.g.,
+   `/models/my-model`).
 
 ### Model Cache
 
-Hugging Face models are cached under `/models` inside the container. Using a Docker volume prevents re-downloading on restarts:
+Hugging Face models are cached under `/models` inside the container. Using a
+Docker volume prevents re-downloading on restarts:
 
 ```yaml
 volumes:
-  - model-cache:/models   # named volume
+  - model-cache:/models # named volume
   # or a bind mount:
   - /host/path/models:/models
 ```
 
 ### Adding Models at Runtime
 
-Currently, models are loaded once at startup. To add or remove models, restart the container with an updated `M2V_MODELS` variable.
+Currently, models are loaded once at startup. To add or remove models, restart
+the container with an updated `M2V_MODELS` variable.
 
 ---
 
@@ -310,14 +320,14 @@ All errors follow a consistent JSON schema:
 
 ### Error Codes
 
-| Code | Meaning              | Typical Cause                                           |
-|------|----------------------|---------------------------------------------------------|
-| 400  | Bad Request          | Invalid JSON, empty input, or malformed request body.   |
-| 401  | Unauthorized         | Missing or invalid `Authorization` header.              |
-| 404  | Not Found            | Unknown model alias or endpoint.                        |
-| 405  | Method Not Allowed   | Using the wrong HTTP method (e.g. GET on `/v1/embeddings`). |
-| 413  | Payload Too Large    | Request body exceeds 16 MiB limit.                      |
-| 500  | Internal Server Error| Unexpected server-side failure.                         |
+| Code | Meaning               | Typical Cause                                               |
+| ---- | --------------------- | ----------------------------------------------------------- |
+| 400  | Bad Request           | Invalid JSON, empty input, or malformed request body.       |
+| 401  | Unauthorized          | Missing or invalid `Authorization` header.                  |
+| 404  | Not Found             | Unknown model alias or endpoint.                            |
+| 405  | Method Not Allowed    | Using the wrong HTTP method (e.g. GET on `/v1/embeddings`). |
+| 413  | Payload Too Large     | Request body exceeds 16 MiB limit.                          |
+| 500  | Internal Server Error | Unexpected server-side failure.                             |
 
 ---
 
@@ -514,8 +524,13 @@ docker build -t model2vec-api .
 
 ## Performance Considerations
 
-- **Request body limit:** 16 MiB (configurable at compile time via `MAX_BODY` in `src/server.rs`).
-- **Concurrency:** Each connection runs in its own Tokio task — fully concurrent.
-- **Keep-alive:** HTTP/1.1 persistent connections are supported and enabled by default.
-- **Model dimension:** Varies by model (e.g., potion-base-8M produces 256-dimensional vectors, potion-base-32M produces 512-dimensional vectors).
-- **Binary size:** Release builds are stripped and compiled with LTO for minimal size (~3–5 MB).
+- **Request body limit:** 16 MiB (configurable at compile time via `MAX_BODY` in
+  `src/server.rs`).
+- **Concurrency:** Each connection runs in its own Tokio task — fully
+  concurrent.
+- **Keep-alive:** HTTP/1.1 persistent connections are supported and enabled by
+  default.
+- **Model dimension:** Varies by model (e.g., potion-base-8M produces
+  256-dimensional vectors, potion-base-32M produces 512-dimensional vectors).
+- **Binary size:** Release builds are stripped and compiled with LTO for minimal
+  size (~3–5 MB).
