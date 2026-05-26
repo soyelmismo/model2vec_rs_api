@@ -49,6 +49,7 @@ fn main() -> Result<()> {
     tokio::runtime::Builder::new_multi_thread()
         .worker_threads(worker_threads)
         .enable_io()
+        .enable_time()
         .build()?
         .block_on(server::serve(&config.listen_addr, state))?;
 
