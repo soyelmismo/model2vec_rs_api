@@ -20,19 +20,30 @@ fn main() -> Result<()> {
 
     let config = Config::from_env(&dotenv)?;
     log::info!(
-        "starting model2vec-api — listen={} models={} auth={}",
+        "starting model2vec-api — listen={} models={} auth={} max_batch={}",
         config.listen_addr,
         config.models.len(),
-        config.api_key.is_some(),
+        if config.auth_disabled {
+            "DISABLED"
+        } else {
+            "enabled"
+        },
+        config.max_batch_size,
     );
 
-    log::info!("models configured: {:?}", config.models);
+    for m in &config.models {
+        log::info!("model alias={}", m.alias);
+    }
 
     let registry = Arc::new(ModelRegistry::load_with_token(
         &config.models,
         config.hf_token.as_deref(),
     )?);
-    let state = Arc::new(AppState::new(registry, config.api_key));
+    let mut app_state = AppState::new(registry, config.api_key.clone(), config.max_batch_size);
+    if config.auth_disabled {
+        app_state = app_state.with_auth_disabled();
+    }
+    let state = Arc::new(app_state);
 
     let worker_threads = config.worker_threads;
     tokio::runtime::Builder::new_multi_thread()

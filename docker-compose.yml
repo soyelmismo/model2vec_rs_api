@@ -1,9 +1,10 @@
 # model2vec-rs API — docker-compose
 #
-# Zero-config deploy:  docker compose up -d
+# Zero-config deploy: docker compose up -d
 # Serves minishlab/potion-base-8M on port 22671 by default.
 #
-# All env vars use the M2V_ prefix to avoid collisions on the host.
+# SECURITY: Create a .env file with your secrets (see .env.example).
+# Secrets are passed via env_file to avoid exposure in docker inspect.
 #
 # To load multiple models:
 #   M2V_MODELS=base:minishlab/potion-base-8M,code:minishlab/potion-code-16M
@@ -23,11 +24,12 @@ services:
     ports:
       - "${PORT:-22671}:22671"
 
+    env_file:
+      - path: .env
+        required: false
+
     environment:
-      M2V_MODELS: "${M2V_MODELS:-base:minishlab/potion-base-8M}"
       M2V_LISTEN_ADDR: "0.0.0.0:22671"
-      M2V_API_KEY: "${M2V_API_KEY:-}"
-      M2V_HF_TOKEN: "${M2V_HF_TOKEN:-}"
       M2V_LOG_LEVEL: "${M2V_LOG_LEVEL:-info}"
 
     volumes:
@@ -42,6 +44,16 @@ services:
       timeout: 5s
       retries: 3
       start_period: 60s
+
+    read_only: true
+    tmpfs:
+      - /tmp:size=10m
+
+    security_opt:
+      - no-new-privileges:true
+
+    cap_drop:
+      - ALL
 
 volumes:
   model-cache:

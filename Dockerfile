@@ -3,10 +3,10 @@ FROM rust:slim AS builder
 
 # Install only what's needed to compile
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        pkg-config \
-        libssl-dev \
-        ca-certificates \
-        g++ \
+    pkg-config \
+    libssl-dev \
+    ca-certificates \
+    g++ \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /build
@@ -14,6 +14,8 @@ WORKDIR /build
 # Cache dependencies with BuildKit — Docker manages this internally,
 # no host mount needed. Portable across machines and CI/CD.
 COPY Cargo.toml Cargo.lock ./
+
+
 COPY src ./src
 RUN --mount=type=cache,target=/build/target \
     --mount=type=cache,target=/usr/local/cargo/registry \
@@ -34,6 +36,9 @@ COPY --from=builder /model2vec-api /model2vec-api
 # Models are mounted at /models — users can bind-mount local model directories.
 VOLUME ["/models"]
 
-EXPOSE 8080
+EXPOSE 22671
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
+    CMD ["/model2vec-api", "healthcheck"]
 
 ENTRYPOINT ["/model2vec-api"]

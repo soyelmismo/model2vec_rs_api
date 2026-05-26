@@ -11,7 +11,12 @@ impl Routable for Arc<AppState> {
         let path = req.path.split('?').next().unwrap_or(req.path);
 
         match (req.method, path) {
-            ("GET", "/health") => health::handle(),
+            ("GET", "/health") => {
+                if let Err(r) = self.check_auth(req) {
+                    return r;
+                }
+                health::handle()
+            }
             ("GET", "/v1/models" | "/models") => models_list::handle(self, req),
             ("POST", "/v1/embeddings" | "/embeddings") => embeddings::handle(self, req).await,
 
@@ -33,7 +38,16 @@ mod tests {
 
     fn empty_state() -> Arc<AppState> {
         let registry = ModelRegistry::load_with_token(&[], None).unwrap();
-        Arc::new(AppState::new(Arc::new(registry), None))
+        Arc::new(AppState::new(Arc::new(registry), None, 128))
+    }
+
+    fn authed_state(key: &str) -> Arc<AppState> {
+        let registry = ModelRegistry::load_with_token(&[], None).unwrap();
+        Arc::new(AppState::new(
+            Arc::new(registry),
+            Some(key.to_string()),
+            128,
+        ))
     }
 
     fn req(method: &'static str, path: &'static str) -> Request<'static> {
@@ -45,11 +59,45 @@ mod tests {
         }
     }
 
+    fn req_with_auth(
+        method: &'static str,
+        path: &'static str,
+        auth: &'static str,
+    ) -> Request<'static> {
+        Request {
+            method,
+            path,
+            body: b"{}",
+            auth_header: Some(auth),
+        }
+    }
+
     #[tokio::test]
     async fn health_get() {
         let state = empty_state();
         let resp = state.route(&req("GET", "/health")).await;
         assert_eq!(resp.status, 200);
+    }
+
+    #[tokio::test]
+    async fn health_with_auth_accepts_valid() {
+        let state = authed_state("secret");
+        let resp = state.route(&req_with_auth("GET", "/health", "Bearer secret")).await;
+        assert_eq!(resp.status, 200);
+    }
+
+    #[tokio::test]
+    async fn health_with_auth_rejects_invalid() {
+        let state = authed_state("secret");
+        let resp = state.route(&req_with_auth("GET", "/health", "Bearer wrong")).await;
+        assert_eq!(resp.status, 401);
+    }
+
+    #[tokio::test]
+    async fn health_no_auth_when_required_rejected() {
+        let state = authed_state("secret");
+        let resp = state.route(&req("GET", "/health")).await;
+        assert_eq!(resp.status, 401);
     }
 
     #[tokio::test]

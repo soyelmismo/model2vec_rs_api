@@ -13,14 +13,33 @@ pub mod models_list;
 pub struct AppState {
     pub registry: Arc<ModelRegistry>,
     pub api_key: Option<String>,
+    pub auth_disabled: bool,
+    pub max_batch_size: usize,
 }
 
 impl AppState {
-    pub const fn new(registry: Arc<ModelRegistry>, api_key: Option<String>) -> Self {
-        Self { registry, api_key }
+    pub const fn new(
+        registry: Arc<ModelRegistry>,
+        api_key: Option<String>,
+        max_batch_size: usize,
+    ) -> Self {
+        Self {
+            registry,
+            api_key,
+            auth_disabled: false,
+            max_batch_size,
+        }
+    }
+
+    pub const fn with_auth_disabled(mut self) -> Self {
+        self.auth_disabled = true;
+        self
     }
 
     pub fn check_auth(&self, req: &Request<'_>) -> Result<(), Response> {
+        if self.auth_disabled {
+            return Ok(());
+        }
         let Some(expected) = &self.api_key else {
             return Ok(());
         };
@@ -60,18 +79,25 @@ mod tests {
     fn empty_state() -> AppState {
         let configs = vec![];
         let registry = ModelRegistry::load_with_token(&configs, None).unwrap();
-        AppState::new(Arc::new(registry), None)
+        AppState::new(Arc::new(registry), None, 128)
     }
 
     fn authed_state(key: &str) -> AppState {
         let configs = vec![];
         let registry = ModelRegistry::load_with_token(&configs, None).unwrap();
-        AppState::new(Arc::new(registry), Some(key.to_string()))
+        AppState::new(Arc::new(registry), Some(key.to_string()), 128)
     }
 
     #[test]
     fn auth_disabled_allows_all() {
         let state = empty_state();
+        assert!(state.check_auth(&dummy_req(None)).is_ok());
+        assert!(state.check_auth(&dummy_req(Some("Bearer x"))).is_ok());
+    }
+
+    #[test]
+    fn auth_explicitly_disabled_allows_all() {
+        let state = authed_state("secret").with_auth_disabled();
         assert!(state.check_auth(&dummy_req(None)).is_ok());
         assert!(state.check_auth(&dummy_req(Some("Bearer x"))).is_ok());
     }

@@ -1,5 +1,7 @@
 use std::borrow::Cow;
+use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 use std::{io, pin::Pin, task::Poll};
 use tokio::{
     io::{AsyncRead, AsyncWrite, ReadBuf},
@@ -11,6 +13,9 @@ const READ_BUF: usize = 8192;
 const MAX_BODY: usize = 16 * 1024 * 1024;
 const MAX_HEADER_SIZE: usize = READ_BUF * 4;
 const MAX_CONNECTIONS: usize = 1024;
+const IDLE_TIMEOUT: Duration = Duration::from_secs(30);
+const RATE_LIMIT_WINDOW: Duration = Duration::from_mins(1);
+const RATE_LIMIT_MAX_REQUESTS: usize = 10000;
 
 // ── Public types ──────────────────────────────────────────────────────────────
 
@@ -49,11 +54,56 @@ impl Response {
                 as &'static [u8],
         )
     }
+    pub fn too_many_requests() -> Self {
+        Self::json(
+            429,
+            br#"{"error":{"message":"rate limit exceeded","type":"api_error","code":429}}"#
+                as &'static [u8],
+        )
+    }
 }
 
 #[async_trait::async_trait]
 pub trait Routable: Send + Sync {
     async fn route(&self, req: &Request<'_>) -> Response;
+}
+
+// ── Rate limiter ─────────────────────────────────────────────────────────────
+
+struct RateLimiter {
+    entries: HashMap<String, (usize, Instant)>,
+    max_requests: usize,
+    window: Duration,
+}
+
+impl RateLimiter {
+    fn new(max_requests: usize, window: Duration) -> Self {
+        Self {
+            entries: HashMap::new(),
+            max_requests,
+            window,
+        }
+    }
+
+    fn check(&mut self, key: &str) -> bool {
+        let now = Instant::now();
+        let entry = self.entries.entry(key.to_owned()).or_insert((0, now));
+
+        if now.duration_since(entry.1) > self.window {
+            *entry = (1, now);
+            return true;
+        }
+
+        entry.0 += 1;
+        entry.0 <= self.max_requests
+    }
+
+    fn cleanup(&mut self) {
+        let now = Instant::now();
+        self.entries.retain(|_, (count, start)| {
+            now.duration_since(*start) <= self.window || *count <= self.max_requests
+        });
+    }
 }
 
 // ── Server entry point ────────────────────────────────────────────────────────
@@ -67,6 +117,18 @@ where
     log::info!("listening on {addr}");
 
     let sem = Arc::new(tokio::sync::Semaphore::new(MAX_CONNECTIONS));
+    let rate_limiter = Arc::new(tokio::sync::Mutex::new(RateLimiter::new(
+        RATE_LIMIT_MAX_REQUESTS,
+        RATE_LIMIT_WINDOW,
+    )));
+
+    let cleanup_limiter = Arc::clone(&rate_limiter);
+    let _cleanup = tokio::spawn(async move {
+        loop {
+            tokio::time::sleep(Duration::from_mins(1)).await;
+            cleanup_limiter.lock().await.cleanup();
+        }
+    });
 
     loop {
         let (stream, peer) = listener.accept().await?;
@@ -83,9 +145,11 @@ where
         }
 
         let state = Arc::clone(&state);
+        let limiter = Arc::clone(&rate_limiter);
+        let peer_ip = peer.ip().to_string();
         drop(tokio::spawn(async move {
             let _permit = permit;
-            if let Err(e) = handle_connection(stream, state).await {
+            if let Err(e) = handle_connection(stream, state, &limiter, &peer_ip).await {
                 log::debug!("connection error from {peer}: {e}");
             }
         }));
@@ -94,7 +158,12 @@ where
 
 // ── Per-connection loop ───────────────────────────────────────────────────────
 
-async fn handle_connection<S>(mut stream: TcpStream, state: Arc<S>) -> anyhow::Result<()>
+async fn handle_connection<S>(
+    mut stream: TcpStream,
+    state: Arc<S>,
+    limiter: &tokio::sync::Mutex<RateLimiter>,
+    peer_ip: &str,
+) -> anyhow::Result<()>
 where
     S: Send + Sync + 'static,
     Arc<S>: Routable,
@@ -107,20 +176,33 @@ where
     let mut read_buf = vec![0u8; READ_BUF];
 
     loop {
-        let header_end = loop {
-            if let Some(pos) = find_header_end(&buf[scan_from..]) {
-                break scan_from + pos;
+        let header_end = tokio::time::timeout(IDLE_TIMEOUT, async {
+            loop {
+                if let Some(pos) = find_header_end(&buf[scan_from..]) {
+                    return Ok::<usize, io::Error>(scan_from + pos);
+                }
+                scan_from = buf.len().saturating_sub(3);
+                if buf.len() - buf_start >= MAX_HEADER_SIZE {
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        "request headers too large",
+                    ));
+                }
+                let n = read(&mut stream, &mut read_buf).await?;
+                if n == 0 {
+                    return Err(io::Error::new(
+                        io::ErrorKind::UnexpectedEof,
+                        "connection closed",
+                    ));
+                }
+                buf.extend_from_slice(&read_buf[..n]);
             }
-            scan_from = buf.len().saturating_sub(3);
-            if buf.len() - buf_start >= MAX_HEADER_SIZE {
-                anyhow::bail!("request headers too large");
-            }
-            let n = read(&mut stream, &mut read_buf).await?;
-            if n == 0 {
-                return Ok(());
-            }
-            buf.extend_from_slice(&read_buf[..n]);
-        };
+        })
+        .await
+        .map_err(|_| {
+            log::debug!("idle timeout reading headers from {peer_ip}");
+            io::Error::new(io::ErrorKind::TimedOut, "idle timeout")
+        })??;
 
         let ParsedHeaders {
             method,
@@ -137,7 +219,18 @@ where
             let need = body_end - buf.len();
             let old = buf.len();
             buf.resize(old + need, 0);
-            read_exact(&mut stream, &mut buf[old..]).await?;
+            tokio::time::timeout(IDLE_TIMEOUT, read_exact(&mut stream, &mut buf[old..]))
+                .await
+                .map_err(|_| {
+                    log::debug!("idle timeout reading body from {peer_ip}");
+                    io::Error::new(io::ErrorKind::TimedOut, "idle timeout")
+                })??;
+        }
+
+        if !limiter.lock().await.check(peer_ip) {
+            let resp = Response::too_many_requests();
+            write_response(&mut stream, &mut head_buf, &mut itoa_buf, &resp).await?;
+            return Ok(());
         }
 
         let body = &buf[buf_start + body_offset..body_end];
@@ -149,21 +242,7 @@ where
         };
         let response = state.route(&request).await;
 
-        let conn_out = if keep_alive { "keep-alive" } else { "close" };
-        head_buf.clear();
-        head_buf.extend_from_slice(b"HTTP/1.1 ");
-        head_buf.extend_from_slice(itoa_buf.format(response.status).as_bytes());
-        head_buf.push(b' ');
-        head_buf.extend_from_slice(status_reason(response.status).as_bytes());
-        head_buf.extend_from_slice(b"\r\nContent-Type: ");
-        head_buf.extend_from_slice(response.content_type.as_bytes());
-        head_buf.extend_from_slice(b"\r\nContent-Length: ");
-        head_buf.extend_from_slice(itoa_buf.format(response.body.len()).as_bytes());
-        head_buf.extend_from_slice(b"\r\nConnection: ");
-        head_buf.extend_from_slice(conn_out.as_bytes());
-        head_buf.extend_from_slice(b"\r\n\r\n");
-        write_all(&mut stream, &head_buf).await?;
-        write_all(&mut stream, &response.body).await?;
+        write_response(&mut stream, &mut head_buf, &mut itoa_buf, &response).await?;
 
         if !keep_alive {
             return Ok(());
@@ -178,6 +257,35 @@ where
             scan_from = 0;
         }
     }
+}
+
+async fn write_response(
+    stream: &mut TcpStream,
+    head_buf: &mut Vec<u8>,
+    itoa_buf: &mut itoa::Buffer,
+    response: &Response,
+) -> io::Result<()> {
+    let conn_out = "close";
+
+    head_buf.clear();
+    head_buf.extend_from_slice(b"HTTP/1.1 ");
+    head_buf.extend_from_slice(itoa_buf.format(response.status).as_bytes());
+    head_buf.push(b' ');
+    head_buf.extend_from_slice(status_reason(response.status).as_bytes());
+    head_buf.extend_from_slice(b"\r\nContent-Type: ");
+    head_buf.extend_from_slice(response.content_type.as_bytes());
+    head_buf.extend_from_slice(b"\r\nContent-Length: ");
+    head_buf.extend_from_slice(itoa_buf.format(response.body.len()).as_bytes());
+    head_buf.extend_from_slice(b"\r\nConnection: ");
+    head_buf.extend_from_slice(conn_out.as_bytes());
+    head_buf.extend_from_slice(b"\r\nX-Content-Type-Options: nosniff");
+    head_buf.extend_from_slice(b"\r\nX-Frame-Options: DENY");
+    head_buf.extend_from_slice(b"\r\nX-Content-Security-Policy: default-src 'none'");
+    head_buf.extend_from_slice(b"\r\nCache-Control: no-store");
+    head_buf.extend_from_slice(b"\r\n\r\n");
+    write_all(stream, head_buf).await?;
+    write_all(stream, &response.body).await?;
+    Ok(())
 }
 
 /// Parsed header data — all owned so the borrow on `buf` is released.
@@ -350,6 +458,7 @@ mod tests {
         assert_eq!(status_reason(404), "Not Found");
         assert_eq!(status_reason(405), "Method Not Allowed");
         assert_eq!(status_reason(413), "Payload Too Large");
+        assert_eq!(status_reason(429), "Too Many Requests");
         assert_eq!(status_reason(500), "Internal Server Error");
     }
 
@@ -406,5 +515,36 @@ mod tests {
     fn find_header_end_skips_lone_cr() {
         let buf = b"GET / HTTP/1.1\r\nX-Foo: bar\rX-Baz: qux\r\n\r\n";
         assert!(find_header_end(buf).is_some());
+    }
+
+    #[test]
+    fn rate_limiter_allows_within_limit() {
+        let mut limiter = RateLimiter::new(3, Duration::from_mins(1));
+        assert!(limiter.check("1.2.3.4"));
+        assert!(limiter.check("1.2.3.4"));
+        assert!(limiter.check("1.2.3.4"));
+    }
+
+    #[test]
+    fn rate_limiter_blocks_over_limit() {
+        let mut limiter = RateLimiter::new(2, Duration::from_mins(1));
+        assert!(limiter.check("1.2.3.4"));
+        assert!(limiter.check("1.2.3.4"));
+        assert!(!limiter.check("1.2.3.4"));
+    }
+
+    #[test]
+    fn rate_limiter_is_per_ip() {
+        let mut limiter = RateLimiter::new(1, Duration::from_mins(1));
+        assert!(limiter.check("1.2.3.4"));
+        assert!(limiter.check("5.6.7.8"));
+        assert!(!limiter.check("1.2.3.4"));
+        assert!(!limiter.check("5.6.7.8"));
+    }
+
+    #[test]
+    fn too_many_requests_response() {
+        let resp = Response::too_many_requests();
+        assert_eq!(resp.status, 429);
     }
 }

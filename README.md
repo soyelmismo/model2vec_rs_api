@@ -183,10 +183,12 @@ Simple health-check endpoint. Does **not** require authentication.
 
 ## Authentication
 
-Authentication is **optional**. When enabled, all API requests (except
-`/health`) must include a `Bearer` token in the `Authorization` header.
+Authentication is **required by default**. The server will refuse to start if
+`M2V_API_KEY` is not set. For local development you can explicitly disable
+authentication by setting `M2V_AUTH_DISABLED=true` (not recommended for
+production).
 
-### Enable Authentication
+### Enable Authentication (default)
 
 Set the `M2V_API_KEY` environment variable:
 
@@ -194,7 +196,13 @@ Set the `M2V_API_KEY` environment variable:
 M2V_API_KEY="sk-your-secret-token" docker compose up -d
 ```
 
-### Authenticated Request
+### Disable Authentication (development only)
+
+```bash
+M2V_AUTH_DISABLED=true docker compose up -d
+```
+
+### Authenticated Request (all endpoints except when auth is disabled)
 
 ```bash
 curl -X POST http://localhost:22671/v1/embeddings \

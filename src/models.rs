@@ -16,12 +16,10 @@ impl ModelRegistry {
         let mut dims = HashMap::with_capacity(configs.len());
 
         for cfg in configs {
-            log::info!("loading model alias={} path={}", cfg.alias, cfg.path);
+            log::info!("loading model alias={}", cfg.alias);
 
             let model = StaticModel::from_pretrained(&cfg.path, hf_token, None, None)
-                .with_context(|| {
-                    format!("failed to load model '{}' from '{}'", cfg.alias, cfg.path)
-                })?;
+                .with_context(|| format!("failed to load model '{}'", cfg.alias))?;
 
             let dim = model.encode(&["probe".to_owned()]).into_iter().next().map_or(0, |v| v.len());
 

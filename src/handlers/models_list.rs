@@ -50,12 +50,12 @@ mod tests {
 
     fn empty_state() -> AppState {
         let registry = ModelRegistry::load_with_token(&[], None).unwrap();
-        AppState::new(Arc::new(registry), None)
+        AppState::new(Arc::new(registry), None, 128)
     }
 
     fn authed_state(key: &str) -> AppState {
         let registry = ModelRegistry::load_with_token(&[], None).unwrap();
-        AppState::new(Arc::new(registry), Some(key.to_string()))
+        AppState::new(Arc::new(registry), Some(key.to_string()), 128)
     }
 
     fn dummy_req(auth: Option<&'static str>) -> Request<'static> {

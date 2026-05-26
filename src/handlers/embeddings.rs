@@ -5,6 +5,8 @@ use crate::error::json_error;
 use crate::handlers::AppState;
 use crate::server::{Request, Response};
 
+const MAX_BATCH_SIZE_DEFAULT: usize = 128;
+
 #[derive(serde::Deserialize)]
 #[serde(untagged)]
 enum EmbeddingInput {
@@ -52,6 +54,12 @@ pub async fn handle(state: &AppState, req: &Request<'_>) -> Response {
         }
     };
 
+    let max_batch = if state.max_batch_size > 0 {
+        state.max_batch_size
+    } else {
+        MAX_BATCH_SIZE_DEFAULT
+    };
+
     let texts: Vec<String> = match parsed.input {
         EmbeddingInput::Single(s) if !s.is_empty() => vec![s],
         EmbeddingInput::Batch(v) if !v.is_empty() => v,
@@ -62,6 +70,20 @@ pub async fn handle(state: &AppState, req: &Request<'_>) -> Response {
             );
         }
     };
+
+    if texts.len() > max_batch {
+        return Response::json(
+            413,
+            json_error(
+                413,
+                &format!(
+                    "batch size {} exceeds maximum of {} — set M2V_MAX_BATCH_SIZE to adjust",
+                    texts.len(),
+                    max_batch
+                ),
+            ),
+        );
+    }
 
     let total_bytes: usize = texts.iter().map(String::len).sum();
     let approx_tokens = (total_bytes / 4).max(1);
@@ -138,12 +160,12 @@ mod tests {
 
     fn empty_state() -> AppState {
         let registry = ModelRegistry::load_with_token(&[], None).unwrap();
-        AppState::new(Arc::new(registry), None)
+        AppState::new(Arc::new(registry), None, 128)
     }
 
     fn authed_state(key: &str) -> AppState {
         let registry = ModelRegistry::load_with_token(&[], None).unwrap();
-        AppState::new(Arc::new(registry), Some(key.to_string()))
+        AppState::new(Arc::new(registry), Some(key.to_string()), 128)
     }
 
     fn req(body: &'static [u8], auth: Option<&'static str>) -> Request<'static> {
@@ -224,5 +246,18 @@ mod tests {
         let body = br#"{"model":"nonexistent","input":"hello"}"#;
         let resp = handle(&state, &req(body, Some("Bearer anything"))).await;
         assert_eq!(resp.status, 404);
+    }
+
+    #[tokio::test]
+    async fn batch_exceeding_max_returns_413() {
+        let registry = ModelRegistry::load_with_token(&[], None).unwrap();
+        let state = AppState::new(Arc::new(registry), None, 2);
+
+        let texts: Vec<String> = (0..3).map(|i| format!("text{i}")).collect();
+        let input = serde_json::to_string(&texts).unwrap();
+        let body = format!(r#"{{"model":"x","input":{input}}}"#);
+        let body_bytes: &'static [u8] = Box::leak(body.into_bytes().into_boxed_slice());
+        let resp = handle(&state, &req(body_bytes, None)).await;
+        assert_eq!(resp.status, 413);
     }
 }

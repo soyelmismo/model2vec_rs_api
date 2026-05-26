@@ -2,23 +2,17 @@ use anyhow::{Context, Result};
 use std::collections::HashMap;
 use std::env;
 
-/// Configuration loaded entirely from environment variables.
-/// All vars are prefixed with `M2V_` to avoid collisions on shared hosts.
-///
-/// Optional env vars:
-///   `M2V_MODELS`       — comma-separated `<alias>:<hf_repo_or_local_path>` entries.
-///                      Default: base:minishlab/potion-base-8M
-///   `M2V_LISTEN_ADDR`  — host:port to bind (default: 0.0.0.0:22671)
-///   `M2V_API_KEY`      — bearer token (disabled if unset)
-///   `M2V_HF_TOKEN`     — Hugging Face token for private models
-///   `M2V_LOG_LEVEL`    — log level: error | warn | info | debug | trace (default: info)
+const ALLOWED_LOCAL_PREFIXES: &[&str] = &["/models/", "/opt/models/", "/data/models/"];
+
 #[derive(Debug, Clone)]
 pub struct Config {
     pub listen_addr: String,
     pub models: Vec<ModelConfig>,
     pub api_key: Option<String>,
+    pub auth_disabled: bool,
     pub hf_token: Option<String>,
     pub worker_threads: usize,
+    pub max_batch_size: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -28,7 +22,6 @@ pub struct ModelConfig {
 }
 
 impl Config {
-    /// Build config from env vars, with optional `.env` values as fallback.
     pub fn from_env(dotenv: &HashMap<String, String>) -> Result<Self> {
         let listen_addr = env_val_or("M2V_LISTEN_ADDR", dotenv, "0.0.0.0:22671");
 
@@ -40,6 +33,7 @@ impl Config {
         }
 
         let api_key = env_val_opt("M2V_API_KEY", dotenv);
+        let auth_disabled = env_val_opt("M2V_AUTH_DISABLED", dotenv).as_deref() == Some("true");
         let hf_token = env_val_opt("M2V_HF_TOKEN", dotenv);
         let worker_threads = match env_val_or("M2V_WORKER_THREADS", dotenv, "4").parse::<usize>() {
             Ok(n) if n > 0 => n,
@@ -53,17 +47,50 @@ impl Config {
             }
         };
 
+        let max_batch_size = match env_val_or("M2V_MAX_BATCH_SIZE", dotenv, "128").parse::<usize>()
+        {
+            Ok(n) if n > 0 => n,
+            Ok(_) => {
+                log::warn!("M2V_MAX_BATCH_SIZE=0 is invalid, defaulting to 128");
+                128
+            }
+            Err(_) => {
+                log::warn!("M2V_MAX_BATCH_SIZE is not a valid number, defaulting to 128");
+                128
+            }
+        };
+
+        if api_key.is_none() && !auth_disabled {
+            log::error!(
+                "AUTHENTICATION IS DISABLED — no M2V_API_KEY set. \
+                 Set M2V_API_KEY=<secret> or explicitly set M2V_AUTH_DISABLED=true \
+                 to acknowledge this risk. Exiting for safety."
+            );
+            anyhow::bail!(
+                "M2V_API_KEY is not set. Set M2V_API_KEY=<secret> to enable authentication, \
+                 or set M2V_AUTH_DISABLED=true to explicitly disable it (not recommended for production)."
+            );
+        }
+
+        if auth_disabled {
+            log::warn!(
+                "AUTHENTICATION IS EXPLICITLY DISABLED (M2V_AUTH_DISABLED=true). \
+                 The API is publicly accessible — do NOT expose to untrusted networks."
+            );
+        }
+
         Ok(Self {
             listen_addr,
             models,
             api_key,
+            auth_disabled,
             hf_token,
             worker_threads,
+            max_batch_size,
         })
     }
 }
 
-/// Read env var; fall back to dotenv map, then to default.
 fn env_val_or(key: &str, dotenv: &HashMap<String, String>, default: &str) -> String {
     env::var(key)
         .ok()
@@ -71,7 +98,6 @@ fn env_val_or(key: &str, dotenv: &HashMap<String, String>, default: &str) -> Str
         .unwrap_or_else(|| default.to_string())
 }
 
-/// Read optional env var; fall back to dotenv map.
 fn env_val_opt(key: &str, dotenv: &HashMap<String, String>) -> Option<String> {
     env::var(key)
         .ok()
@@ -87,12 +113,33 @@ fn parse_models(raw: &str) -> Result<Vec<ModelConfig>> {
             let (alias, path) = entry.split_once(':').with_context(|| {
                 format!("invalid M2V_MODELS entry '{entry}' — expected <alias>:<path>")
             })?;
-            Ok(ModelConfig {
-                alias: alias.trim().to_string(),
-                path: path.trim().to_string(),
-            })
+            let alias = alias.trim().to_string();
+            let path = path.trim().to_string();
+
+            validate_model_path(&path, &alias)?;
+
+            Ok(ModelConfig { alias, path })
         })
         .collect()
+}
+
+fn validate_model_path(path: &str, alias: &str) -> Result<()> {
+    if path.contains("..") {
+        anyhow::bail!(
+            "model path for '{alias}' contains '..' — path traversal is not allowed: {path}"
+        );
+    }
+
+    if path.starts_with('/') {
+        let allowed = ALLOWED_LOCAL_PREFIXES.iter().any(|prefix| path.starts_with(prefix));
+        if !allowed {
+            anyhow::bail!(
+                "local path for '{alias}' must start with one of {ALLOWED_LOCAL_PREFIXES:?} — got: {path}"
+            );
+        }
+    }
+
+    Ok(())
 }
 
 #[cfg(test)]
@@ -116,9 +163,21 @@ mod tests {
     }
 
     #[test]
-    fn parse_local_path() {
+    fn parse_local_path_allowed() {
         let models = parse_models("local:/models/my-model").unwrap();
         assert_eq!(models[0].path, "/models/my-model");
+    }
+
+    #[test]
+    fn parse_local_path_opt_models() {
+        let models = parse_models("local:/opt/models/my-model").unwrap();
+        assert_eq!(models[0].path, "/opt/models/my-model");
+    }
+
+    #[test]
+    fn parse_local_path_data_models() {
+        let models = parse_models("local:/data/models/my-model").unwrap();
+        assert_eq!(models[0].path, "/data/models/my-model");
     }
 
     #[test]
@@ -130,5 +189,33 @@ mod tests {
     fn empty_string_is_empty_list() {
         let models = parse_models("").unwrap();
         assert!(models.is_empty());
+    }
+
+    #[test]
+    fn path_traversal_dotdot_rejected() {
+        let result = parse_models("x:../etc/passwd");
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("path traversal"), "got: {err}");
+    }
+
+    #[test]
+    fn path_traversal_embedded_dotdot_rejected() {
+        let result = parse_models("x:foo/../../etc/passwd");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn absolute_path_outside_allowed_rejected() {
+        let result = parse_models("x:/etc/passwd");
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("must start with"), "got: {err}");
+    }
+
+    #[test]
+    fn absolute_path_under_models_allowed() {
+        let models = parse_models("x:/models/sub/model").unwrap();
+        assert_eq!(models[0].path, "/models/sub/model");
     }
 }
