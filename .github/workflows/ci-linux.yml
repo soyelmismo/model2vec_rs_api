@@ -73,7 +73,9 @@ jobs:
         uses: Swatinem/rust-cache@v2
 
       - name: Install musl tools
-        run: sudo apt-get update && sudo apt-get install -y musl-tools
+        run: sudo apt-get update && sudo apt-get install -y musl-tools g++-multilib
 
       - name: Build (musl release)
         run: cargo build --release --target x86_64-unknown-linux-musl
+        env:
+          CXX_x86_64_unknown_linux_musl: g++
