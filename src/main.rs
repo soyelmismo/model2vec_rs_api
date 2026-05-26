@@ -1,5 +1,6 @@
 use anyhow::Result;
 use std::collections::HashMap;
+use std::net::TcpStream;
 use std::sync::Arc;
 
 mod config;
@@ -15,6 +16,24 @@ use handlers::AppState;
 use models::ModelRegistry;
 
 fn main() -> Result<()> {
+    if std::env::args().nth(1).as_deref() == Some("healthcheck") {
+        let addr = std::env::var("M2V_LISTEN_ADDR")
+            .unwrap_or_else(|_| "0.0.0.0:22671".into());
+        let addr = addr.to_string();
+        let socket: std::net::SocketAddr = addr.parse().map_err(|e| {
+            anyhow::anyhow!("cannot parse M2V_LISTEN_ADDR {addr}: {e}")
+        })?;
+        let target = if socket.ip().is_unspecified() {
+            std::net::SocketAddr::new(std::net::IpAddr::from([127, 0, 0, 1]), socket.port())
+        } else {
+            socket
+        };
+        let _ = TcpStream::connect_timeout(&target, std::time::Duration::from_secs(3))
+            .map_err(|e| anyhow::anyhow!("healthcheck failed: {e}"))?;
+        eprintln!("healthcheck ok — {target}");
+        return Ok(());
+    }
+
     let dotenv = load_dotenv_values();
     logger::init();
 
