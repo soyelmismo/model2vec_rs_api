@@ -24,7 +24,7 @@ jobs:
       - name: Run tests
         run: cargo test --all-targets
 
-  build:
+  build-arm64:
     name: Build (aarch64)
     needs: test
     runs-on: macos-latest
@@ -47,4 +47,29 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: model2vec-api-macos-aarch64
+          path: target/release/model2vec-api
+
+  build-x86:
+    name: Build (x86_64)
+    needs: test
+    runs-on: macos-13
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        run: |
+          rustup set profile minimal
+          rustup toolchain install stable
+          rustup default stable
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build
+        run: cargo build --release
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: model2vec-api-macos-x86_64
           path: target/release/model2vec-api

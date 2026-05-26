@@ -54,6 +54,9 @@ jobs:
           chmod +x ./artifacts/model2vec-api-macos-aarch64/model2vec-api
           mv ./artifacts/model2vec-api-macos-aarch64/model2vec-api ./model2vec-api-macos-aarch64
 
+          chmod +x ./artifacts/model2vec-api-macos-x86_64/model2vec-api
+          mv ./artifacts/model2vec-api-macos-x86_64/model2vec-api ./model2vec-api-macos-x86_64
+
       - name: Extract version from Cargo.toml
         id: version
         run: |
@@ -106,4 +109,5 @@ jobs:
             ./model2vec-api-linux-aarch64-musl
             ./model2vec-api-windows-x86_64.exe
             ./model2vec-api-macos-aarch64
+            ./model2vec-api-macos-x86_64
           draft: false
