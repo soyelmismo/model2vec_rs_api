@@ -6,12 +6,14 @@ use crate::config::ModelConfig;
 
 pub struct ModelRegistry {
     models: HashMap<String, StaticModel>,
+    dims: HashMap<String, usize>,
     sorted_aliases: Vec<String>,
 }
 
 impl ModelRegistry {
     pub fn load_with_token(configs: &[ModelConfig], hf_token: Option<&str>) -> Result<Self> {
         let mut models = HashMap::with_capacity(configs.len());
+        let mut dims = HashMap::with_capacity(configs.len());
 
         for cfg in configs {
             log::info!("loading model alias={} path={}", cfg.alias, cfg.path);
@@ -21,7 +23,10 @@ impl ModelRegistry {
                     format!("failed to load model '{}' from '{}'", cfg.alias, cfg.path)
                 })?;
 
-            log::info!("model loaded successfully alias={}", cfg.alias);
+            let dim = model.encode(&["probe".to_owned()]).into_iter().next().map_or(0, |v| v.len());
+
+            log::info!("model loaded successfully alias={} dims={}", cfg.alias, dim);
+
             if let Some(prev) = models.insert(cfg.alias.clone(), model) {
                 log::warn!(
                     "model alias '{}' was loaded twice — replacing previous instance",
@@ -29,6 +34,7 @@ impl ModelRegistry {
                 );
                 drop(prev);
             }
+            let _ = dims.insert(cfg.alias.clone(), dim);
         }
 
         let mut sorted_aliases: Vec<String> = models.keys().cloned().collect();
@@ -36,6 +42,7 @@ impl ModelRegistry {
 
         Ok(Self {
             models,
+            dims,
             sorted_aliases,
         })
     }
@@ -43,6 +50,10 @@ impl ModelRegistry {
     pub fn encode_owned(&self, alias: &str, texts: &[String]) -> Option<Vec<Vec<f32>>> {
         let model = self.models.get(alias)?;
         Some(model.encode(texts))
+    }
+
+    pub fn dims(&self, alias: &str) -> Option<usize> {
+        self.dims.get(alias).copied()
     }
 
     pub fn aliases(&self) -> &[String] {
@@ -62,6 +73,12 @@ mod tests {
     fn encode_missing_model_returns_none() {
         let reg = empty_registry();
         assert!(reg.encode_owned("nonexistent", &["text".to_owned()]).is_none());
+    }
+
+    #[test]
+    fn dims_missing_model_returns_none() {
+        let reg = empty_registry();
+        assert!(reg.dims("nonexistent").is_none());
     }
 
     #[test]

@@ -16,6 +16,7 @@ enum EmbeddingInput {
 struct EmbeddingRequest {
     model: String,
     input: EmbeddingInput,
+    dimensions: Option<usize>,
 }
 
 #[derive(Serialize)]
@@ -66,7 +67,23 @@ pub async fn handle(state: &AppState, req: &Request<'_>) -> Response {
     let approx_tokens = (total_bytes / 4).max(1);
 
     let model = parsed.model.clone();
+    let requested_dims = parsed.dimensions;
     let registry = Arc::clone(&state.registry);
+
+    if let Some(wanted) = requested_dims {
+        let native = registry.dims(&model).unwrap_or(0);
+        if native > 0 && wanted > native {
+            return Response::json(
+                400,
+                json_error(
+                    400,
+                    &format!(
+                        "model '{model}' supports up to {native} dimensions, but {wanted} was requested"
+                    ),
+                ),
+            );
+        }
+    }
 
     let embeddings =
         tokio::task::spawn_blocking(move || registry.encode_owned(&model, &texts)).await;
@@ -81,10 +98,15 @@ pub async fn handle(state: &AppState, req: &Request<'_>) -> Response {
     let data: Vec<EmbeddingData> = embeddings
         .into_iter()
         .enumerate()
-        .map(|(i, emb)| EmbeddingData {
-            object: "embedding",
-            embedding: emb,
-            index: i,
+        .map(|(i, mut emb)| {
+            if let Some(d) = requested_dims {
+                emb.truncate(d);
+            }
+            EmbeddingData {
+                object: "embedding",
+                embedding: emb,
+                index: i,
+            }
         })
         .collect();
 
@@ -160,6 +182,22 @@ mod tests {
     async fn missing_model_returns_404() {
         let state = empty_state();
         let body = br#"{"model":"nonexistent","input":"hello"}"#;
+        let resp = handle(&state, &req(body, None)).await;
+        assert_eq!(resp.status, 404);
+    }
+
+    #[tokio::test]
+    async fn dims_exceeding_native_returns_400() {
+        let state = empty_state();
+        let body = br#"{"model":"nonexistent","input":"hello","dimensions":1024}"#;
+        let resp = handle(&state, &req(body, None)).await;
+        assert_eq!(resp.status, 404);
+    }
+
+    #[tokio::test]
+    async fn dims_zero_on_unknown_model_returns_404() {
+        let state = empty_state();
+        let body = br#"{"model":"unknown","input":"hello","dimensions":1}"#;
         let resp = handle(&state, &req(body, None)).await;
         assert_eq!(resp.status, 404);
     }
