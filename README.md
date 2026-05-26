@@ -5,7 +5,6 @@
 > Minimal, OpenAI-compatible embeddings server powered by
 > [model2vec-rs](https://github.com/MinishLab/model2vec-rs).
 >
-> **No frameworks.** No hyper, axum, or tower — just raw HTTP/1.1 over Tokio.
 
 ---
 
