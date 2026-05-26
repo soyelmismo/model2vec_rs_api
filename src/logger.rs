@@ -21,15 +21,63 @@ impl Log for SimpleLogger {
     fn flush(&self) {}
 }
 
-fn now_rfc3339() -> String {
+fn now_rfc3339() -> ArrayString<32> {
     use std::time::{SystemTime, UNIX_EPOCH};
-    let total_secs = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();
+    let total_secs = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
     let sec = total_secs % 60;
     let min = (total_secs / 60) % 60;
     let hour = (total_secs / 3600) % 24;
     let days = total_secs / 86400;
     let (year, month, day) = days_to_ymd(days);
-    format!("{year:04}-{month:02}-{day:02}T{hour:02}:{min:02}:{sec:02}Z")
+    let mut s = ArrayString::new();
+    write!(
+        s,
+        "{year:04}-{month:02}-{day:02}T{hour:02}:{min:02}:{sec:02}Z"
+    )
+    .unwrap();
+    s
+}
+
+use std::fmt::Write;
+
+struct ArrayString<const N: usize> {
+    buf: [u8; N],
+    len: usize,
+}
+
+impl<const N: usize> ArrayString<N> {
+    const fn new() -> Self {
+        Self {
+            buf: [0; N],
+            len: 0,
+        }
+    }
+
+    #[allow(dead_code)]
+    fn as_str(&self) -> &str {
+        std::str::from_utf8(&self.buf[..self.len]).unwrap_or("")
+    }
+}
+
+impl<const N: usize> std::fmt::Write for ArrayString<N> {
+    fn write_str(&mut self, s: &str) -> std::fmt::Result {
+        let bytes = s.as_bytes();
+        if self.len + bytes.len() > N {
+            return Err(std::fmt::Error);
+        }
+        self.buf[self.len..self.len + bytes.len()].copy_from_slice(bytes);
+        self.len += bytes.len();
+        Ok(())
+    }
+}
+
+impl<const N: usize> std::fmt::Display for ArrayString<N> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(std::str::from_utf8(&self.buf[..self.len]).unwrap_or(""))
+    }
 }
 
 /// Convert days-since-epoch to (year, month, day) in O(1).
@@ -56,7 +104,11 @@ fn days_to_ymd(days: u64) -> (u64, u64, u64) {
 static LOGGER: OnceLock<SimpleLogger> = OnceLock::new();
 
 pub fn init() {
-    let level = parse_level(std::env::var("M2V_LOG_LEVEL").as_deref().unwrap_or("info"));
+    let level = parse_level(
+        std::env::var("M2V_LOG_LEVEL")
+            .as_deref()
+            .unwrap_or("info"),
+    );
     let logger = LOGGER.get_or_init(|| SimpleLogger { max_level: level });
     let _ = log::set_logger(logger);
     log::set_max_level(level);
@@ -108,13 +160,33 @@ mod tests {
 
     #[test]
     fn days_to_ymd_known_date() {
-        // 2025-01-01 = 20089 days since epoch
         assert_eq!(days_to_ymd(20089), (2025, 1, 1));
     }
 
     #[test]
     fn days_to_ymd_leap_year() {
-        // 2024-02-29 = 19782 days since epoch
         assert_eq!(days_to_ymd(19782), (2024, 2, 29));
+    }
+
+    #[test]
+    fn now_rfc3339_format() {
+        let s = now_rfc3339();
+        let s = s.as_str();
+        assert!(s.starts_with(|c: char| c.is_ascii_digit()));
+        assert!(s.ends_with('Z'));
+        assert_eq!(s.len(), 20);
+    }
+
+    #[test]
+    fn array_string_basic() {
+        let mut s = ArrayString::<16>::new();
+        write!(s, "hello").unwrap();
+        assert_eq!(s.as_str(), "hello");
+    }
+
+    #[test]
+    fn array_string_overflow() {
+        let mut s = ArrayString::<4>::new();
+        assert!(write!(s, "hello").is_err());
     }
 }

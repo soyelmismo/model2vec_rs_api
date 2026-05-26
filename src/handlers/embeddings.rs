@@ -62,8 +62,8 @@ pub async fn handle(state: &AppState, req: &Request<'_>) -> Response {
         }
     };
 
-    let total_chars: usize = texts.iter().map(|s| s.chars().count()).sum();
-    let approx_tokens = (total_chars / 4).max(1);
+    let total_bytes: usize = texts.iter().map(String::len).sum();
+    let approx_tokens = (total_bytes / 4).max(1);
 
     let model = parsed.model.clone();
     let registry = Arc::clone(&state.registry);
@@ -98,7 +98,17 @@ pub async fn handle(state: &AppState, req: &Request<'_>) -> Response {
         },
     };
 
-    Response::json(200, serde_json::to_vec(&resp).unwrap_or_default())
+    let mut buf = Vec::with_capacity(estimated_size(&resp));
+    serde_json::to_writer(&mut buf, &resp).unwrap_or_default();
+    Response::json(200, buf)
+}
+
+fn estimated_size(resp: &EmbeddingResponse) -> usize {
+    256 + resp
+        .data
+        .iter()
+        .map(|d| d.embedding.len().saturating_mul(5))
+        .sum::<usize>()
 }
 
 #[cfg(test)]

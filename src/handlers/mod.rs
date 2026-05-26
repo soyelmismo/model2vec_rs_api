@@ -36,12 +36,9 @@ impl AppState {
 
 #[inline]
 fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
-    if a.len() != b.len() {
-        return false;
-    }
-    let mut result = 0u8;
+    let mut result = a.len() ^ b.len();
     for (x, y) in a.iter().zip(b.iter()) {
-        result |= x ^ y;
+        result |= (x ^ y) as usize;
     }
     result == 0
 }

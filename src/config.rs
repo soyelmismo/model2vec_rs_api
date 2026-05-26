@@ -41,7 +41,17 @@ impl Config {
 
         let api_key = env_val_opt("M2V_API_KEY", dotenv);
         let hf_token = env_val_opt("M2V_HF_TOKEN", dotenv);
-        let worker_threads = env_val_or("M2V_WORKER_THREADS", dotenv, "4").parse().unwrap_or(4);
+        let worker_threads = match env_val_or("M2V_WORKER_THREADS", dotenv, "4").parse::<usize>() {
+        Ok(n) if n > 0 => n,
+        Ok(_) => {
+            log::warn!("M2V_WORKER_THREADS=0 is invalid, defaulting to 4");
+            4
+        }
+        Err(_) => {
+            log::warn!("M2V_WORKER_THREADS is not a valid number, defaulting to 4");
+            4
+        }
+    };
 
         Ok(Self {
             listen_addr,

@@ -1,5 +1,6 @@
 use std::borrow::Cow;
-use std::{io, pin::Pin, sync::Arc, task::Poll};
+use std::sync::Arc;
+use std::{io, pin::Pin, task::Poll};
 use tokio::{
     io::{AsyncRead, AsyncWrite, ReadBuf},
     net::{TcpListener, TcpStream},
@@ -9,6 +10,7 @@ const MAX_HEADERS: usize = 64;
 const READ_BUF: usize = 8192;
 const MAX_BODY: usize = 16 * 1024 * 1024;
 const MAX_HEADER_SIZE: usize = READ_BUF * 4;
+const MAX_CONNECTIONS: usize = 1024;
 
 // ── Public types ──────────────────────────────────────────────────────────────
 
@@ -63,11 +65,26 @@ where
 {
     let listener = TcpListener::bind(addr).await?;
     log::info!("listening on {addr}");
+
+    let sem = Arc::new(tokio::sync::Semaphore::new(MAX_CONNECTIONS));
+
     loop {
         let (stream, peer) = listener.accept().await?;
+
+        let Ok(permit) = Arc::clone(&sem).try_acquire_owned() else {
+            log::warn!("connection limit reached, rejecting {peer}");
+            continue;
+        };
+
         log::debug!("accepted connection from {peer}");
+
+        if let Err(e) = stream.set_nodelay(true) {
+            log::debug!("failed to set TCP_NODELAY for {peer}: {e}");
+        }
+
         let state = Arc::clone(&state);
         drop(tokio::spawn(async move {
+            let _permit = permit;
             if let Err(e) = handle_connection(stream, state).await {
                 log::debug!("connection error from {peer}: {e}");
             }
@@ -85,6 +102,9 @@ where
     let mut buf: Vec<u8> = Vec::with_capacity(READ_BUF);
     let mut buf_start = 0usize;
     let mut scan_from = 0usize;
+    let mut head_buf: Vec<u8> = Vec::with_capacity(256);
+    let mut itoa_buf = itoa::Buffer::new();
+    let mut read_buf = vec![0u8; READ_BUF];
 
     loop {
         let header_end = loop {
@@ -95,16 +115,13 @@ where
             if buf.len() - buf_start >= MAX_HEADER_SIZE {
                 anyhow::bail!("request headers too large");
             }
-            let mut tmp = [0u8; READ_BUF];
-            let n = read(&mut stream, &mut tmp).await?;
+            let n = read(&mut stream, &mut read_buf).await?;
             if n == 0 {
                 return Ok(());
             }
-            buf.extend_from_slice(&tmp[..n]);
+            buf.extend_from_slice(&read_buf[..n]);
         };
 
-        // Parse headers from buf — extract what we need, then drop all borrows
-        // before potentially mutating buf to read the body.
         let ParsedHeaders {
             method,
             path,
@@ -123,7 +140,6 @@ where
             read_exact(&mut stream, &mut buf[old..]).await?;
         }
 
-        // Now borrow buf again for body + request construction
         let body = &buf[buf_start + body_offset..body_end];
         let request = Request {
             method: &method,
@@ -134,20 +150,19 @@ where
         let response = state.route(&request).await;
 
         let conn_out = if keep_alive { "keep-alive" } else { "close" };
-        let mut head = Vec::with_capacity(128);
-        let mut ib = ::itoa::Buffer::new();
-        head.extend_from_slice(b"HTTP/1.1 ");
-        head.extend_from_slice(ib.format(response.status).as_bytes());
-        head.push(b' ');
-        head.extend_from_slice(status_reason(response.status).as_bytes());
-        head.extend_from_slice(b"\r\nContent-Type: ");
-        head.extend_from_slice(response.content_type.as_bytes());
-        head.extend_from_slice(b"\r\nContent-Length: ");
-        head.extend_from_slice(ib.format(response.body.len()).as_bytes());
-        head.extend_from_slice(b"\r\nConnection: ");
-        head.extend_from_slice(conn_out.as_bytes());
-        head.extend_from_slice(b"\r\n\r\n");
-        write_all(&mut stream, &head).await?;
+        head_buf.clear();
+        head_buf.extend_from_slice(b"HTTP/1.1 ");
+        head_buf.extend_from_slice(itoa_buf.format(response.status).as_bytes());
+        head_buf.push(b' ');
+        head_buf.extend_from_slice(status_reason(response.status).as_bytes());
+        head_buf.extend_from_slice(b"\r\nContent-Type: ");
+        head_buf.extend_from_slice(response.content_type.as_bytes());
+        head_buf.extend_from_slice(b"\r\nContent-Length: ");
+        head_buf.extend_from_slice(itoa_buf.format(response.body.len()).as_bytes());
+        head_buf.extend_from_slice(b"\r\nConnection: ");
+        head_buf.extend_from_slice(conn_out.as_bytes());
+        head_buf.extend_from_slice(b"\r\n\r\n");
+        write_all(&mut stream, &head_buf).await?;
         write_all(&mut stream, &response.body).await?;
 
         if !keep_alive {
@@ -155,8 +170,8 @@ where
         }
 
         buf_start = body_end;
-        scan_from = buf_start;
-        if buf_start > READ_BUF * 2 {
+        scan_from = body_end;
+        if buf_start > READ_BUF {
             buf.copy_within(buf_start.., 0);
             buf.truncate(buf.len() - buf_start);
             buf_start = 0;
@@ -267,7 +282,22 @@ async fn write_all(stream: &mut TcpStream, mut buf: &[u8]) -> io::Result<()> {
 
 #[inline]
 fn find_header_end(buf: &[u8]) -> Option<usize> {
-    buf.windows(4).position(|w| w == b"\r\n\r\n")
+    if buf.len() < 4 {
+        return None;
+    }
+    let end = buf.len() - 3;
+    let mut i = 0;
+    while i < end {
+        if buf[i] == b'\r' {
+            if buf[i + 1] == b'\n' && buf[i + 2] == b'\r' && buf[i + 3] == b'\n' {
+                return Some(i);
+            }
+            i += 2;
+        } else {
+            i += 1;
+        }
+    }
+    None
 }
 
 fn header_val<'a>(headers: &'a [httparse::Header<'a>], name: &str) -> &'a str {
@@ -286,6 +316,7 @@ const fn status_reason(code: u16) -> &'static str {
         404 => "Not Found",
         405 => "Method Not Allowed",
         413 => "Payload Too Large",
+        429 => "Too Many Requests",
         500 => "Internal Server Error",
         _ => "Unknown",
     }
@@ -369,5 +400,11 @@ mod tests {
             ph.body_offset,
             raw.windows(4).position(|w| w == b"\r\n\r\n").unwrap() + 4
         );
+    }
+
+    #[test]
+    fn find_header_end_skips_lone_cr() {
+        let buf = b"GET / HTTP/1.1\r\nX-Foo: bar\rX-Baz: qux\r\n\r\n";
+        assert!(find_header_end(buf).is_some());
     }
 }
