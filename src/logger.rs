@@ -23,10 +23,7 @@ impl Log for SimpleLogger {
 
 fn now_rfc3339() -> ArrayString<32> {
     use std::time::{SystemTime, UNIX_EPOCH};
-    let total_secs = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs();
+    let total_secs = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();
     let sec = total_secs % 60;
     let min = (total_secs / 60) % 60;
     let hour = (total_secs / 3600) % 24;
@@ -104,11 +101,7 @@ fn days_to_ymd(days: u64) -> (u64, u64, u64) {
 static LOGGER: OnceLock<SimpleLogger> = OnceLock::new();
 
 pub fn init() {
-    let level = parse_level(
-        std::env::var("M2V_LOG_LEVEL")
-            .as_deref()
-            .unwrap_or("info"),
-    );
+    let level = parse_level(std::env::var("M2V_LOG_LEVEL").as_deref().unwrap_or("info"));
     let logger = LOGGER.get_or_init(|| SimpleLogger { max_level: level });
     let _ = log::set_logger(logger);
     log::set_max_level(level);

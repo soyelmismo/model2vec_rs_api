@@ -104,11 +104,7 @@ pub async fn handle(state: &AppState, req: &Request<'_>) -> Response {
 }
 
 fn estimated_size(resp: &EmbeddingResponse) -> usize {
-    256 + resp
-        .data
-        .iter()
-        .map(|d| d.embedding.len().saturating_mul(5))
-        .sum::<usize>()
+    256 + resp.data.iter().map(|d| d.embedding.len().saturating_mul(5)).sum::<usize>()
 }
 
 #[cfg(test)]
