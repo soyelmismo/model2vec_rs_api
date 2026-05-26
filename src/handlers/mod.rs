@@ -73,6 +73,7 @@ mod tests {
             path: "/v1/embeddings",
             body: b"{}",
             auth_header: auth,
+        forwarded_for: None,
         }
     }
 

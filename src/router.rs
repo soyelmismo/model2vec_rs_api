@@ -56,6 +56,7 @@ mod tests {
             path,
             body: b"{}",
             auth_header: None,
+        forwarded_for: None,
         }
     }
 
@@ -69,6 +70,7 @@ mod tests {
             path,
             body: b"{}",
             auth_header: Some(auth),
+        forwarded_for: None,
         }
     }
 
@@ -157,6 +159,7 @@ mod tests {
             path: "/health?token=x",
             body: b"{}",
             auth_header: None,
+        forwarded_for: None,
         };
         let resp = state.route(&req).await;
         assert_eq!(resp.status, 200);

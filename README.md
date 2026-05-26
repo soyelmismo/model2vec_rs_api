@@ -1,5 +1,7 @@
 # model2vec-api — API Reference
 
+<!-- markdownlint-disable MD060 MD004 -->
+
 > Minimal, OpenAI-compatible embeddings server powered by
 > [model2vec-rs](https://github.com/MinishLab/model2vec-rs).
 >
@@ -229,13 +231,16 @@ curl -X POST http://localhost:22671/v1/embeddings \
 
 All configuration is done through environment variables.
 
-| Variable          | Default                         | Description                                                             |
-| ----------------- | ------------------------------- | ----------------------------------------------------------------------- |
-| `M2V_MODELS`      | `base:minishlab/potion-base-8M` | Comma-separated list of `alias:path` entries (see below).               |
-| `M2V_LISTEN_ADDR` | `0.0.0.0:22671`                 | Host and port the server binds to.                                      |
-| `M2V_API_KEY`     | _(disabled)_                    | Bearer token required on all API requests. Leave unset to disable auth. |
-| `M2V_HF_TOKEN`    | _(none)_                        | Hugging Face token for private or gated models.                         |
-| `M2V_LOG_LEVEL`   | `info`                          | Log level: `error`, `warn`, `info`, `debug`, `trace`.                   |
+| Variable               | Default                         | Description                                                                                                         |
+| ---------------------- | ------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `M2V_MODELS`          | `base:minishlab/potion-base-8M` | Comma‑separated list of `alias:path` entries (see below).                                                          |
+| `M2V_LISTEN_ADDR`     | `0.0.0.0:22671`                 | Host and port the server binds to.                                                                                  |
+| `M2V_API_KEY`          | _(disabled)_                    | Bearer token required on all API requests. Leave unset to disable authentication (not recommended for production). |
+| `M2V_AUTH_DISABLED`   | `false`                         | When set to `true` authentication is explicitly disabled; the server will emit a warning at startup.                |
+| `M2V_HF_TOKEN`        | _(none)_                        | Hugging Face token for private or gated models.                                                                     |
+| `M2V_WORKER_THREADS`  | `4`                             | Number of Tokio worker threads. If set to `0` the default of `4` is used.                                          |
+| `M2V_MAX_BATCH_SIZE`  | `128`                           | Maximum number of inputs that can be processed in a single request. Exceeding this returns HTTP 413.               |
+| `M2V_LOG_LEVEL`       | `info`                          | Log level: `error`, `warn`, `info`, `debug`, `trace`.                                                               |
 
 ### Model Configuration Syntax
 
@@ -243,10 +248,10 @@ All configuration is done through environment variables.
 M2V_MODELS=<alias>:<path>[,<alias>:<path>...]
 ```
 
-- **`<alias>`** — a short name used in the `model` field of API requests (e.g.
-  `"base"`, `"code"`, `"large"`).
-- **`<path>`** — a Hugging Face repo ID (e.g. `minishlab/potion-base-8M`) or an
-  absolute path to a local model directory.
+* **`<alias>`** — a short name used in the `model` field of API requests (e.g. `"base"`, `"code"`, `"large"`).
+* **`<path>`** — a Hugging Face repo ID (e.g. `minishlab/potion-base-8M`) **or** an absolute path to a local model directory.
+  For security, local paths must reside under one of the allowed prefixes:
+  `/models/`, `/opt/models/`, or `/data/models/`. Paths outside these directories are rejected at startup.
 
 #### Configuration Examples
 
@@ -328,14 +333,14 @@ All errors follow a consistent JSON schema:
 
 ### Error Codes
 
-| Code | Meaning               | Typical Cause                                               |
-| ---- | --------------------- | ----------------------------------------------------------- |
-| 400  | Bad Request           | Invalid JSON, empty input, or malformed request body.       |
-| 401  | Unauthorized          | Missing or invalid `Authorization` header.                  |
-| 404  | Not Found             | Unknown model alias or endpoint.                            |
-| 405  | Method Not Allowed    | Using the wrong HTTP method (e.g. GET on `/v1/embeddings`). |
-| 413  | Payload Too Large     | Request body exceeds 16 MiB limit.                          |
-| 500  | Internal Server Error | Unexpected server-side failure.                             |
+| Code | Meaning               | Typical Cause                                                                 |
+| ---- | --------------------- | --------------------------------------------------------------------------- |
+| 400  | Bad Request           | Invalid JSON, empty input, malformed request body, or invalid dimensions. |
+| 401  | Unauthorized          | Missing or invalid `Authorization` header.                                 |
+| 404  | Not Found             | Unknown model alias or endpoint.                                            |
+| 405  | Method Not Allowed    | Using the wrong HTTP method (e.g. GET on `/v1/embeddings`).                 |
+| 413  | Payload Too Large     | Request body exceeds 16 MiB **or** batch size exceeds `M2V_MAX_BATCH_SIZE`. |
+| 500  | Internal Server Error | Unexpected server‑side failure.                                            |
 
 ---
 

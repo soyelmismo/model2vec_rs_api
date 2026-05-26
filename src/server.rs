@@ -10,7 +10,7 @@ use tokio::{
 
 const MAX_HEADERS: usize = 64;
 const READ_BUF: usize = 8192;
-const MAX_BODY: usize = 16 * 1024 * 1024;
+const MAX_BODY: usize = 2 * 1024 * 1024;
 const MAX_HEADER_SIZE: usize = READ_BUF * 4;
 const MAX_CONNECTIONS: usize = 1024;
 const IDLE_TIMEOUT: Duration = Duration::from_secs(30);
@@ -24,6 +24,8 @@ pub struct Request<'a> {
     pub path: &'a str,
     pub body: &'a [u8],
     pub auth_header: Option<&'a str>,
+    #[allow(dead_code)]
+    pub forwarded_for: Option<&'a str>,
 }
 
 pub struct Response {
@@ -208,10 +210,19 @@ where
             method,
             path,
             auth,
+            forwarded_for,
             keep_alive,
             content_length,
             body_offset,
         } = parse_headers(&buf, buf_start, header_end)?;
+
+        let rate_limit_key = forwarded_for.as_deref().unwrap_or(peer_ip);
+
+        if !limiter.lock().await.check(rate_limit_key) {
+            let resp = Response::too_many_requests();
+            write_response(&mut stream, &mut head_buf, &mut itoa_buf, &resp).await?;
+            return Ok(());
+        }
 
         let body_end = buf_start + body_offset + content_length;
 
@@ -227,18 +238,13 @@ where
                 })??;
         }
 
-        if !limiter.lock().await.check(peer_ip) {
-            let resp = Response::too_many_requests();
-            write_response(&mut stream, &mut head_buf, &mut itoa_buf, &resp).await?;
-            return Ok(());
-        }
-
         let body = &buf[buf_start + body_offset..body_end];
         let request = Request {
             method: &method,
             path: &path,
             body,
             auth_header: auth.as_deref(),
+            forwarded_for: forwarded_for.as_deref(),
         };
         let response = state.route(&request).await;
 
@@ -293,6 +299,7 @@ struct ParsedHeaders {
     method: String,
     path: String,
     auth: Option<String>,
+    forwarded_for: Option<String>,
     keep_alive: bool,
     content_length: usize,
     body_offset: usize,
@@ -326,6 +333,13 @@ fn parse_headers(buf: &[u8], buf_start: usize, header_end: usize) -> anyhow::Res
         .and_then(|h| std::str::from_utf8(h.value).ok())
         .map(str::to_owned);
 
+    let forwarded_for: Option<String> = parsed
+        .headers
+        .iter()
+        .find(|h| h.name.eq_ignore_ascii_case("x-forwarded-for"))
+        .and_then(|h| std::str::from_utf8(h.value).ok())
+        .map(|v| v.split(',').next().unwrap_or(v).trim().to_owned());
+
     if content_length > MAX_BODY {
         anyhow::bail!("body too large ({content_length} bytes)");
     }
@@ -336,6 +350,7 @@ fn parse_headers(buf: &[u8], buf_start: usize, header_end: usize) -> anyhow::Res
         method,
         path,
         auth,
+        forwarded_for,
         keep_alive,
         content_length,
         body_offset,

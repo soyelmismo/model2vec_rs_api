@@ -1,6 +1,6 @@
 [package]
 name = "model2vec-api"
-version = "0.0.2"
+version = "0.0.3"
 edition = "2024"
 description = "Minimal, OpenAI-compatible embeddings server powered by model2vec-rs"
 license = "MIT"

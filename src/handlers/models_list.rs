@@ -64,6 +64,7 @@ mod tests {
             path: "/v1/models",
             body: b"{}",
             auth_header: auth,
+        forwarded_for: None,
         }
     }
 
