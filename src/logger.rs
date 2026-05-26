@@ -37,7 +37,11 @@ fn now_rfc3339() -> String {
 #[allow(clippy::cast_sign_loss, clippy::unreadable_literal)]
 fn days_to_ymd(days: u64) -> (u64, u64, u64) {
     let z = i64::try_from(days).unwrap_or(0) + 719_468;
-    let era = if z >= 0 { z / 146_097 } else { (z - 146_096) / 146_097 };
+    let era = if z >= 0 {
+        z / 146_097
+    } else {
+        (z - 146_096) / 146_097
+    };
     let doe = z - era * 146_097;
     let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
     let y = yoe + era * 400;

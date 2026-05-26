@@ -34,7 +34,10 @@ impl ModelRegistry {
         let mut sorted_aliases: Vec<String> = models.keys().cloned().collect();
         sorted_aliases.sort_unstable();
 
-        Ok(Self { models, sorted_aliases })
+        Ok(Self {
+            models,
+            sorted_aliases,
+        })
     }
 
     pub fn encode_owned(&self, alias: &str, texts: &[String]) -> Option<Vec<Vec<f32>>> {

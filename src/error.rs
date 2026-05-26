@@ -65,6 +65,6 @@ mod tests {
     fn message_with_backslash_escaped() {
         let body = json_error(400, r"path\name");
         let s = std::str::from_utf8(&body).unwrap();
-        assert!(s.contains(r#"path\\name"#));
+        assert!(s.contains(r"path\\name"));
     }
 }

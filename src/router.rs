@@ -37,7 +37,12 @@ mod tests {
     }
 
     fn req(method: &'static str, path: &'static str) -> Request<'static> {
-        Request { method, path, body: b"{}", auth_header: None }
+        Request {
+            method,
+            path,
+            body: b"{}",
+            auth_header: None,
+        }
     }
 
     #[tokio::test]
@@ -99,7 +104,12 @@ mod tests {
     #[tokio::test]
     async fn query_string_stripped() {
         let state = empty_state();
-        let req = Request { method: "GET", path: "/health?token=x", body: b"{}", auth_header: None };
+        let req = Request {
+            method: "GET",
+            path: "/health?token=x",
+            body: b"{}",
+            auth_header: None,
+        };
         let resp = state.route(&req).await;
         assert_eq!(resp.status, 200);
     }

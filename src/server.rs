@@ -34,10 +34,18 @@ impl Response {
         }
     }
     pub fn not_found() -> Self {
-        Self::json(404, br#"{"error":{"message":"not found","type":"api_error","code":404}}"# as &'static [u8])
+        Self::json(
+            404,
+            br#"{"error":{"message":"not found","type":"api_error","code":404}}"#
+                as &'static [u8],
+        )
     }
     pub fn method_not_allowed() -> Self {
-        Self::json(405, br#"{"error":{"message":"method not allowed","type":"api_error","code":405}}"# as &'static [u8])
+        Self::json(
+            405,
+            br#"{"error":{"message":"method not allowed","type":"api_error","code":405}}"#
+                as &'static [u8],
+        )
     }
 }
 
@@ -346,13 +354,20 @@ mod tests {
     #[test]
     fn parse_headers_basic() {
         let raw = b"POST /v1/embeddings HTTP/1.1\r\ncontent-length: 5\r\nauthorization: Bearer test\r\n\r\nhello";
-        let ph = parse_headers(raw, 0, raw.windows(4).position(|w| w == b"\r\n\r\n").unwrap());
+        let ph = parse_headers(
+            raw,
+            0,
+            raw.windows(4).position(|w| w == b"\r\n\r\n").unwrap(),
+        );
         let ph = ph.unwrap();
         assert_eq!(ph.method, "POST");
         assert_eq!(ph.path, "/v1/embeddings");
         assert_eq!(ph.auth.as_deref(), Some("Bearer test"));
         assert!(ph.keep_alive);
         assert_eq!(ph.content_length, 5);
-        assert_eq!(ph.body_offset, raw.windows(4).position(|w| w == b"\r\n\r\n").unwrap() + 4);
+        assert_eq!(
+            ph.body_offset,
+            raw.windows(4).position(|w| w == b"\r\n\r\n").unwrap() + 4
+        );
     }
 }

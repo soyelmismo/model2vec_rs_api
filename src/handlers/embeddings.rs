@@ -68,9 +68,8 @@ pub async fn handle(state: &AppState, req: &Request<'_>) -> Response {
     let model = parsed.model.clone();
     let registry = Arc::clone(&state.registry);
 
-    let embeddings = tokio::task::spawn_blocking(move || {
-        registry.encode_owned(&model, &texts)
-    }).await;
+    let embeddings =
+        tokio::task::spawn_blocking(move || registry.encode_owned(&model, &texts)).await;
 
     let Some(embeddings) = embeddings.ok().flatten() else {
         return Response::json(
@@ -120,7 +119,12 @@ mod tests {
     }
 
     fn req(body: &'static [u8], auth: Option<&'static str>) -> Request<'static> {
-        Request { method: "POST", path: "/v1/embeddings", body, auth_header: auth }
+        Request {
+            method: "POST",
+            path: "/v1/embeddings",
+            body,
+            auth_header: auth,
+        }
     }
 
     #[tokio::test]
