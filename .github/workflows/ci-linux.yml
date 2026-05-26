@@ -5,17 +5,16 @@ on:
     branches: [main, master]
   pull_request:
     branches: [main, master]
+  workflow_call:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  # ── Step 1: Lint ──────────────────────────────────────────────────────
   lint:
     uses: ./.github/workflows/ci.yml
 
-  # ── Step 2: Test ──────────────────────────────────────────────────────
   test:
     name: Test
     needs: lint
@@ -35,9 +34,8 @@ jobs:
       - name: Run tests
         run: cargo test --all-targets
 
-  # ── Step 3: Build (release) ───────────────────────────────────────────
-  build:
-    name: Build (release)
+  build-glibc:
+    name: Build (x86_64 glibc)
     needs: test
     runs-on: ubuntu-latest
     steps:
@@ -52,12 +50,17 @@ jobs:
       - name: Rust cache
         uses: Swatinem/rust-cache@v2
 
-      - name: Build (release)
+      - name: Build
         run: cargo build --release
 
-  # ── Step 4: Build (linux-musl) ────────────────────────────────────────
-  musl:
-    name: Build (linux-musl)
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: model2vec-api-linux-x86_64-glibc
+          path: target/release/model2vec-api
+
+  build-musl:
+    name: Build (x86_64 musl)
     needs: test
     runs-on: ubuntu-latest
     steps:
@@ -75,7 +78,86 @@ jobs:
       - name: Install musl tools
         run: sudo apt-get update && sudo apt-get install -y musl-tools g++-multilib
 
-      - name: Build (musl release)
+      - name: Build
         run: cargo build --release --target x86_64-unknown-linux-musl
         env:
           CXX_x86_64_unknown_linux_musl: g++
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: model2vec-api-linux-x86_64-musl
+          path: target/x86_64-unknown-linux-musl/release/model2vec-api
+
+  build-arm64-glibc:
+    name: Build (aarch64 glibc)
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        run: |
+          rustup set profile minimal
+          rustup toolchain install stable --target aarch64-unknown-linux-gnu
+          rustup default stable
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install cross-compilation tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
+
+      - name: Build
+        run: cargo build --release --target aarch64-unknown-linux-gnu
+        env:
+          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
+          CXX_aarch64_unknown_linux_gnu: aarch64-linux-gnu-g++
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: model2vec-api-linux-aarch64-glibc
+          path: target/aarch64-unknown-linux-gnu/release/model2vec-api
+
+  build-arm64-musl:
+    name: Build (aarch64 musl)
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        run: |
+          rustup set profile minimal
+          rustup toolchain install stable --target aarch64-unknown-linux-musl
+          rustup default stable
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install cross-compilation tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y musl-tools gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
+
+      - name: Configure musl linker
+        run: |
+          mkdir -p .cargo
+          cat >> .cargo/config.toml << 'EOF'
+          [target.aarch64-unknown-linux-musl]
+          linker = "aarch64-linux-gnu-gcc"
+          EOF
+
+      - name: Build
+        run: cargo build --release --target aarch64-unknown-linux-musl
+        env:
+          CXX_aarch64_unknown_linux_musl: aarch64-linux-gnu-g++
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: model2vec-api-linux-aarch64-musl
+          path: target/aarch64-unknown-linux-musl/release/model2vec-api
