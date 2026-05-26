@@ -17,12 +17,10 @@ use models::ModelRegistry;
 
 fn main() -> Result<()> {
     if std::env::args().nth(1).as_deref() == Some("healthcheck") {
-        let addr = std::env::var("M2V_LISTEN_ADDR")
-            .unwrap_or_else(|_| "0.0.0.0:22671".into());
-        let addr = addr.to_string();
-        let socket: std::net::SocketAddr = addr.parse().map_err(|e| {
-            anyhow::anyhow!("cannot parse M2V_LISTEN_ADDR {addr}: {e}")
-        })?;
+        let addr = std::env::var("M2V_LISTEN_ADDR").unwrap_or_else(|_| "0.0.0.0:22671".into());
+        let socket: std::net::SocketAddr = addr
+            .parse()
+            .map_err(|e| anyhow::anyhow!("cannot parse M2V_LISTEN_ADDR {addr}: {e}"))?;
         let target = if socket.ip().is_unspecified() {
             std::net::SocketAddr::new(std::net::IpAddr::from([127, 0, 0, 1]), socket.port())
         } else {
