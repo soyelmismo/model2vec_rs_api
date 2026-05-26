@@ -18,6 +18,7 @@ pub struct Config {
     pub models: Vec<ModelConfig>,
     pub api_key: Option<String>,
     pub hf_token: Option<String>,
+    pub worker_threads: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -40,12 +41,14 @@ impl Config {
 
         let api_key = env_val_opt("M2V_API_KEY", dotenv);
         let hf_token = env_val_opt("M2V_HF_TOKEN", dotenv);
+        let worker_threads = env_val_or("M2V_WORKER_THREADS", dotenv, "4").parse().unwrap_or(4);
 
         Ok(Self {
             listen_addr,
             models,
             api_key,
             hf_token,
+            worker_threads,
         })
     }
 }

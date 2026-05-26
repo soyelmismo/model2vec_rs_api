@@ -37,7 +37,7 @@ impl ModelRegistry {
         Ok(Self { models, sorted_aliases })
     }
 
-    pub fn encode(&self, alias: &str, texts: &[String]) -> Option<Vec<Vec<f32>>> {
+    pub fn encode_owned(&self, alias: &str, texts: &[String]) -> Option<Vec<Vec<f32>>> {
         let model = self.models.get(alias)?;
         Some(model.encode(texts))
     }
@@ -58,7 +58,7 @@ mod tests {
     #[test]
     fn encode_missing_model_returns_none() {
         let reg = empty_registry();
-        assert!(reg.encode("nonexistent", &["text"].map(|s| s.to_string())).is_none());
+        assert!(reg.encode_owned("nonexistent", &["text".to_owned()]).is_none());
     }
 
     #[test]

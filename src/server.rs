@@ -1,14 +1,3 @@
-/// Minimal HTTP/1.1 server — no hyper, no axum, no tower, no io-util.
-///
-/// Handles:
-///   - HTTP/1.1 persistent connections (keep-alive)
-///   - Content-Length framed bodies
-///   - One tokio task per connection for full concurrency
-///   - Correct Connection: close / keep-alive negotiation
-///
-/// I/O helpers (read, `read_exact`, `write_all`) are implemented manually
-/// using the raw `tokio::io::AsyncRead` / `AsyncWrite` traits so we don't
-/// need the `io-util` feature (and therefore don't pull in `bytes`).
 use std::borrow::Cow;
 use std::{io, pin::Pin, sync::Arc, task::Poll};
 use tokio::{
@@ -18,7 +7,8 @@ use tokio::{
 
 const MAX_HEADERS: usize = 64;
 const READ_BUF: usize = 8192;
-const MAX_BODY: usize = 16 * 1024 * 1024; // 16 MiB
+const MAX_BODY: usize = 16 * 1024 * 1024;
+const MAX_HEADER_SIZE: usize = READ_BUF * 4;
 
 // ── Public types ──────────────────────────────────────────────────────────────
 
@@ -51,8 +41,9 @@ impl Response {
     }
 }
 
-pub trait Routable {
-    fn route(&self, req: &Request<'_>) -> Response;
+#[async_trait::async_trait]
+pub trait Routable: Send + Sync {
+    async fn route(&self, req: &Request<'_>) -> Response;
 }
 
 // ── Server entry point ────────────────────────────────────────────────────────
@@ -68,7 +59,6 @@ where
         let (stream, peer) = listener.accept().await?;
         log::debug!("accepted connection from {peer}");
         let state = Arc::clone(&state);
-        // Fire-and-forget: each connection runs in its own task
         drop(tokio::spawn(async move {
             if let Err(e) = handle_connection(stream, state).await {
                 log::debug!("connection error from {peer}: {e}");
@@ -86,14 +76,15 @@ where
 {
     let mut buf: Vec<u8> = Vec::with_capacity(READ_BUF);
     let mut buf_start = 0usize;
+    let mut scan_from = 0usize;
 
     loop {
-        // 1. Read until \r\n\r\n
         let header_end = loop {
-            if let Some(pos) = find_header_end(&buf[buf_start..]) {
-                break buf_start + pos;
+            if let Some(pos) = find_header_end(&buf[scan_from..]) {
+                break scan_from + pos;
             }
-            if buf.len() - buf_start >= READ_BUF * 4 {
+            scan_from = buf.len().saturating_sub(3);
+            if buf.len() - buf_start >= MAX_HEADER_SIZE {
                 anyhow::bail!("request headers too large");
             }
             let mut tmp = [0u8; READ_BUF];
@@ -104,42 +95,17 @@ where
             buf.extend_from_slice(&tmp[..n]);
         };
 
-        // 2. Parse headers
-        let header_section = &buf[buf_start..header_end + 4];
-        let mut raw_headers = [httparse::EMPTY_HEADER; MAX_HEADERS];
-        let mut parsed = httparse::Request::new(&mut raw_headers);
-        let status = parsed.parse(header_section)?;
-        debug_assert!(matches!(status, httparse::Status::Complete(_)));
+        // Parse headers from buf — extract what we need, then drop all borrows
+        // before potentially mutating buf to read the body.
+        let ParsedHeaders {
+            method,
+            path,
+            auth,
+            keep_alive,
+            content_length,
+            body_offset,
+        } = parse_headers(&buf, buf_start, header_end)?;
 
-        let method = parsed.method.unwrap_or("").to_owned();
-        let path = parsed.path.unwrap_or("/").to_owned();
-        let http11 = parsed.version.unwrap_or(0) == 1;
-
-        let conn_val = header_val(parsed.headers, "connection");
-        let keep_alive = if http11 {
-            !conn_val.eq_ignore_ascii_case("close")
-        } else {
-            conn_val.eq_ignore_ascii_case("keep-alive")
-        };
-
-        let content_length: usize =
-            header_val(parsed.headers, "content-length").trim().parse().unwrap_or(0);
-
-        let auth: Option<String> = parsed
-            .headers
-            .iter()
-            .find(|h| h.name.eq_ignore_ascii_case("authorization"))
-            .and_then(|h| std::str::from_utf8(h.value).ok())
-            .map(str::to_owned);
-
-        // parsed goes out of scope here — no need for explicit drop
-
-        if content_length > MAX_BODY {
-            anyhow::bail!("body too large ({content_length} bytes)");
-        }
-
-        // 3. Read body
-        let body_offset = header_end - buf_start + 4;
         let body_end = buf_start + body_offset + content_length;
 
         if buf.len() < body_end {
@@ -149,18 +115,16 @@ where
             read_exact(&mut stream, &mut buf[old..]).await?;
         }
 
+        // Now borrow buf again for body + request construction
         let body = &buf[buf_start + body_offset..body_end];
-
-        // 4. Dispatch
         let request = Request {
             method: &method,
             path: &path,
             body,
             auth_header: auth.as_deref(),
         };
-        let response = state.route(&request);
+        let response = state.route(&request).await;
 
-        // 5. Write response
         let conn_out = if keep_alive { "keep-alive" } else { "close" };
         let mut head = Vec::with_capacity(128);
         let mut ib = ::itoa::Buffer::new();
@@ -183,17 +147,72 @@ where
         }
 
         buf_start = body_end;
+        scan_from = buf_start;
         if buf_start > READ_BUF * 2 {
             buf.copy_within(buf_start.., 0);
             buf.truncate(buf.len() - buf_start);
             buf_start = 0;
+            scan_from = 0;
         }
     }
 }
 
-// ── Manual I/O helpers (replaces io-util / bytes) ────────────────────────────
+/// Parsed header data — all owned so the borrow on `buf` is released.
+struct ParsedHeaders {
+    method: String,
+    path: String,
+    auth: Option<String>,
+    keep_alive: bool,
+    content_length: usize,
+    body_offset: usize,
+}
 
-/// Single non-blocking read. Returns number of bytes read (0 = EOF).
+fn parse_headers(buf: &[u8], buf_start: usize, header_end: usize) -> anyhow::Result<ParsedHeaders> {
+    let header_section = &buf[buf_start..header_end + 4];
+    let mut raw_headers = [httparse::EMPTY_HEADER; MAX_HEADERS];
+    let mut parsed = httparse::Request::new(&mut raw_headers);
+    let status = parsed.parse(header_section)?;
+    debug_assert!(matches!(status, httparse::Status::Complete(_)));
+
+    let method = parsed.method.unwrap_or("").to_owned();
+    let path = parsed.path.unwrap_or("/").to_owned();
+    let http11 = parsed.version.unwrap_or(0) == 1;
+
+    let conn_val = header_val(parsed.headers, "connection");
+    let keep_alive = if http11 {
+        !conn_val.eq_ignore_ascii_case("close")
+    } else {
+        conn_val.eq_ignore_ascii_case("keep-alive")
+    };
+
+    let content_length: usize =
+        header_val(parsed.headers, "content-length").trim().parse().unwrap_or(0);
+
+    let auth: Option<String> = parsed
+        .headers
+        .iter()
+        .find(|h| h.name.eq_ignore_ascii_case("authorization"))
+        .and_then(|h| std::str::from_utf8(h.value).ok())
+        .map(str::to_owned);
+
+    if content_length > MAX_BODY {
+        anyhow::bail!("body too large ({content_length} bytes)");
+    }
+
+    let body_offset = header_end - buf_start + 4;
+
+    Ok(ParsedHeaders {
+        method,
+        path,
+        auth,
+        keep_alive,
+        content_length,
+        body_offset,
+    })
+}
+
+// ── Manual I/O helpers ────────────────────────────────────────────────────────
+
 async fn read(stream: &mut TcpStream, buf: &mut [u8]) -> io::Result<usize> {
     std::future::poll_fn(|cx| {
         let mut rb = ReadBuf::new(buf);
@@ -206,7 +225,6 @@ async fn read(stream: &mut TcpStream, buf: &mut [u8]) -> io::Result<usize> {
     .await
 }
 
-/// Read until `buf` is completely filled (mirrors `read_exact`).
 async fn read_exact(stream: &mut TcpStream, mut buf: &mut [u8]) -> io::Result<()> {
     while !buf.is_empty() {
         let mut rb = ReadBuf::new(buf);
@@ -223,7 +241,6 @@ async fn read_exact(stream: &mut TcpStream, mut buf: &mut [u8]) -> io::Result<()
     Ok(())
 }
 
-/// Write all bytes in `buf` (mirrors `write_all`).
 async fn write_all(stream: &mut TcpStream, mut buf: &[u8]) -> io::Result<()> {
     while !buf.is_empty() {
         let n = std::future::poll_fn(|cx| Pin::new(&mut *stream).poll_write(cx, buf)).await?;
@@ -324,5 +341,18 @@ mod tests {
     #[test]
     fn header_val_empty_headers() {
         assert_eq!(header_val(&[], "anything"), "");
+    }
+
+    #[test]
+    fn parse_headers_basic() {
+        let raw = b"POST /v1/embeddings HTTP/1.1\r\ncontent-length: 5\r\nauthorization: Bearer test\r\n\r\nhello";
+        let ph = parse_headers(raw, 0, raw.windows(4).position(|w| w == b"\r\n\r\n").unwrap());
+        let ph = ph.unwrap();
+        assert_eq!(ph.method, "POST");
+        assert_eq!(ph.path, "/v1/embeddings");
+        assert_eq!(ph.auth.as_deref(), Some("Bearer test"));
+        assert!(ph.keep_alive);
+        assert_eq!(ph.content_length, 5);
+        assert_eq!(ph.body_offset, raw.windows(4).position(|w| w == b"\r\n\r\n").unwrap() + 4);
     }
 }

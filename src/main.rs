@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 mod config;
+mod error;
 mod handlers;
 mod logger;
 mod models;
@@ -33,8 +34,9 @@ fn main() -> Result<()> {
     )?);
     let state = Arc::new(AppState::new(registry, config.api_key));
 
-    // Manual runtime — no #[tokio::main] macro, no tokio-macros crate
+    let worker_threads = config.worker_threads;
     tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(worker_threads)
         .enable_io()
         .build()?
         .block_on(server::serve(&config.listen_addr, state))?;
@@ -42,7 +44,6 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-/// Parse `.env` into a key-value map — no env var mutation, no unsafe.
 fn load_dotenv_values() -> HashMap<String, String> {
     let Ok(contents) = std::fs::read_to_string(".env") else {
         return HashMap::new();

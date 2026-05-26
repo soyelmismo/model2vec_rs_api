@@ -1,21 +1,41 @@
+use serde::Serialize;
+
 use crate::handlers::AppState;
 use crate::server::{Request, Response};
+
+#[derive(Serialize)]
+struct ModelEntry {
+    id: String,
+    object: &'static str,
+    owned_by: &'static str,
+}
+
+#[derive(Serialize)]
+struct ModelsResponse {
+    object: &'static str,
+    data: Vec<ModelEntry>,
+}
 
 pub fn handle(state: &AppState, req: &Request<'_>) -> Response {
     if let Err(r) = state.check_auth(req) {
         return r;
     }
 
-    let data: Vec<_> = state.registry.aliases().iter().map(|alias| serde_json::json!({
-        "id": alias,
-        "object": "model",
-        "owned_by": "model2vec-api"
-    })).collect();
+    let data: Vec<ModelEntry> = state
+        .registry
+        .aliases()
+        .iter()
+        .map(|alias| ModelEntry {
+            id: alias.clone(),
+            object: "model",
+            owned_by: "model2vec-api",
+        })
+        .collect();
 
-    let body = serde_json::json!({
-        "object": "list",
-        "data": data
-    });
+    let body = ModelsResponse {
+        object: "list",
+        data,
+    };
 
     Response::json(200, serde_json::to_vec(&body).unwrap_or_default())
 }
