@@ -800,7 +800,7 @@ dependencies = [
 
 [[package]]
 name = "model2vec-api"
-version = "0.0.2"
+version = "0.0.3"
 dependencies = [
  "anyhow",
  "async-trait",

@@ -131,13 +131,10 @@ fn validate_model_path(path: &str, alias: &str) -> Result<()> {
     }
 
     if path.starts_with('/') {
-        let canonical = std::fs::canonicalize(path).unwrap_or_else(|_| {
-            std::path::PathBuf::from(path)
-        });
+        let canonical =
+            std::fs::canonicalize(path).unwrap_or_else(|_| std::path::PathBuf::from(path));
         let canonical_str = canonical.to_string_lossy();
-        let allowed = ALLOWED_LOCAL_PREFIXES
-            .iter()
-            .any(|prefix| canonical_str.starts_with(prefix));
+        let allowed = ALLOWED_LOCAL_PREFIXES.iter().any(|prefix| canonical_str.starts_with(prefix));
         if !allowed {
             anyhow::bail!(
                 "local path for '{alias}' must resolve under one of {ALLOWED_LOCAL_PREFIXES:?} — got: {path} (resolved: {canonical_str})"

@@ -50,7 +50,13 @@ pub async fn handle(state: &AppState, req: &Request<'_>) -> Response {
     let parsed: EmbeddingRequest = match serde_json::from_slice(req.body) {
         Ok(v) => v,
         Err(_) => {
-            return Response::json(400, json_error(400, "invalid request body — check your JSON syntax and field types"));
+            return Response::json(
+                400,
+                json_error(
+                    400,
+                    "invalid request body — check your JSON syntax and field types",
+                ),
+            );
         }
     };
 
@@ -174,7 +180,7 @@ mod tests {
             path: "/v1/embeddings",
             body,
             auth_header: auth,
-        forwarded_for: None,
+            forwarded_for: None,
         }
     }
 
