@@ -352,8 +352,7 @@ fn parse_headers(buf: &[u8], buf_start: usize, header_end: usize) -> anyhow::Res
 
     let base_path = path.split('?').next().unwrap_or(path.as_str());
     let max_body_limit = match (method.as_str(), base_path) {
-        ("POST", "/v1/embeddings") | ("POST", "/embeddings") => MAX_BODY,
-        ("GET", "/health") | ("GET", "/v1/models") | ("GET", "/models") => 0,
+        ("POST", "/v1/embeddings" | "/embeddings") => MAX_BODY,
         _ => 0,
     };
 
@@ -569,11 +568,7 @@ mod tests {
     #[test]
     fn parse_headers_body_limits() {
         let make_req = |method: &str, path: &str, cl: usize| -> Vec<u8> {
-            format!(
-                "{} {} HTTP/1.1\r\ncontent-length: {}\r\n\r\n",
-                method, path, cl
-            )
-            .into_bytes()
+            format!("{method} {path} HTTP/1.1\r\ncontent-length: {cl}\r\n\r\n").into_bytes()
         };
 
         let raw = make_req("POST", "/v1/embeddings", 5);
