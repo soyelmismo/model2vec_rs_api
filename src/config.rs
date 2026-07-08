@@ -235,7 +235,10 @@ mod tests {
     #[test]
     fn env_val_or_returns_dotenv_when_no_env_var() {
         let mut dotenv = HashMap::new();
-        let _ = dotenv.insert("TEST_ENV_VAL_OR_VAR2".to_string(), "dotenv_value".to_string());
+        let _ = dotenv.insert(
+            "TEST_ENV_VAL_OR_VAR2".to_string(),
+            "dotenv_value".to_string(),
+        );
         let val = env_val_or("TEST_ENV_VAL_OR_VAR2", &dotenv, "default_value");
         assert_eq!(val, "dotenv_value");
     }
@@ -260,7 +263,10 @@ mod tests {
     #[test]
     fn env_val_opt_returns_dotenv_when_no_env_var() {
         let mut dotenv = HashMap::new();
-        let _ = dotenv.insert("TEST_ENV_VAL_OPT_VAR2".to_string(), "dotenv_value".to_string());
+        let _ = dotenv.insert(
+            "TEST_ENV_VAL_OPT_VAR2".to_string(),
+            "dotenv_value".to_string(),
+        );
         let val = env_val_opt("TEST_ENV_VAL_OPT_VAR2", &dotenv);
         assert_eq!(val, Some("dotenv_value".to_string()));
     }
