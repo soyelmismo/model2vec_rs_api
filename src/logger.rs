@@ -53,7 +53,7 @@ impl<const N: usize> ArrayString<N> {
         }
     }
 
-    #[allow(dead_code)]
+    #[cfg(test)]
     fn as_str(&self) -> &str {
         std::str::from_utf8(&self.buf[..self.len]).unwrap_or("")
     }
