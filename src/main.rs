@@ -74,19 +74,19 @@ fn main() -> Result<()> {
 }
 
 fn load_dotenv_values() -> HashMap<String, String> {
-    let Ok(contents) = std::fs::read_to_string(".env") else {
-        return HashMap::new();
-    };
     let mut map = HashMap::new();
+    let Ok(contents) = std::fs::read_to_string(".env") else {
+        return map;
+    };
     for line in contents.lines() {
         let line = line.trim();
         if line.is_empty() || line.starts_with('#') {
             continue;
         }
         if let Some((key, val)) = line.split_once('=') {
-            let k = key.trim().to_string();
-            let v = val.trim().trim_matches('"').trim_matches('\'').to_string();
-            let _ = map.entry(k).or_insert(v);
+            let k = key.trim();
+            let _ = map.entry(k.to_string())
+                .or_insert_with(|| val.trim().trim_matches('"').trim_matches('\'').to_string());
         }
     }
     map
