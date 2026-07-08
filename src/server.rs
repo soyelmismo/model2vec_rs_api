@@ -405,22 +405,7 @@ async fn write_all(stream: &mut TcpStream, mut buf: &[u8]) -> io::Result<()> {
 
 #[inline]
 fn find_header_end(buf: &[u8]) -> Option<usize> {
-    if buf.len() < 4 {
-        return None;
-    }
-    let end = buf.len() - 3;
-    let mut i = 0;
-    while i < end {
-        if buf[i] == b'\r' {
-            if buf[i + 1] == b'\n' && buf[i + 2] == b'\r' && buf[i + 3] == b'\n' {
-                return Some(i);
-            }
-            i += 2;
-        } else {
-            i += 1;
-        }
-    }
-    None
+    buf.windows(4).position(|w| w == b"\r\n\r\n")
 }
 
 fn header_val<'a>(headers: &'a [httparse::Header<'a>], name: &str) -> &'a str {
