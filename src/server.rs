@@ -574,7 +574,7 @@ mod tests {
         }
 
         let state = Arc::new(DummyRoutable);
-        let limiter = tokio::sync::Mutex::new(RateLimiter::new(100, Duration::from_secs(60)));
+        let limiter = tokio::sync::Mutex::new(RateLimiter::new(100, Duration::from_mins(1)));
 
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
@@ -590,8 +590,7 @@ mod tests {
         let err_str = result.unwrap_err().to_string();
         assert!(
             err_str.contains("connection closed"),
-            "unexpected error: {}",
-            err_str
+            "unexpected error: {err_str}",
         );
     }
 }
