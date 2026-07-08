@@ -569,31 +569,62 @@ mod tests {
     #[test]
     fn parse_headers_body_limits() {
         let make_req = |method: &str, path: &str, cl: usize| -> Vec<u8> {
-            format!("{} {} HTTP/1.1\r\ncontent-length: {}\r\n\r\n", method, path, cl).into_bytes()
+            format!(
+                "{} {} HTTP/1.1\r\ncontent-length: {}\r\n\r\n",
+                method, path, cl
+            )
+            .into_bytes()
         };
 
         let raw = make_req("POST", "/v1/embeddings", 5);
-        let ph = parse_headers(&raw, 0, raw.windows(4).position(|w| w == b"\r\n\r\n").unwrap());
+        let ph = parse_headers(
+            &raw,
+            0,
+            raw.windows(4).position(|w| w == b"\r\n\r\n").unwrap(),
+        );
         assert!(ph.is_ok());
 
         let raw = make_req("POST", "/v1/embeddings", 2 * 1024 * 1024 + 1);
-        let ph = parse_headers(&raw, 0, raw.windows(4).position(|w| w == b"\r\n\r\n").unwrap());
-        assert!(ph.is_err(), "should reject POST /v1/embeddings with body > 2MB");
+        let ph = parse_headers(
+            &raw,
+            0,
+            raw.windows(4).position(|w| w == b"\r\n\r\n").unwrap(),
+        );
+        assert!(
+            ph.is_err(),
+            "should reject POST /v1/embeddings with body > 2MB"
+        );
 
         let raw = make_req("GET", "/health", 1);
-        let ph = parse_headers(&raw, 0, raw.windows(4).position(|w| w == b"\r\n\r\n").unwrap());
+        let ph = parse_headers(
+            &raw,
+            0,
+            raw.windows(4).position(|w| w == b"\r\n\r\n").unwrap(),
+        );
         assert!(ph.is_err(), "should reject GET /health with body > 0");
 
         let raw = make_req("GET", "/health", 0);
-        let ph = parse_headers(&raw, 0, raw.windows(4).position(|w| w == b"\r\n\r\n").unwrap());
+        let ph = parse_headers(
+            &raw,
+            0,
+            raw.windows(4).position(|w| w == b"\r\n\r\n").unwrap(),
+        );
         assert!(ph.is_ok(), "should allow GET /health with 0 body");
 
         let raw = make_req("GET", "/v1/models", 5);
-        let ph = parse_headers(&raw, 0, raw.windows(4).position(|w| w == b"\r\n\r\n").unwrap());
+        let ph = parse_headers(
+            &raw,
+            0,
+            raw.windows(4).position(|w| w == b"\r\n\r\n").unwrap(),
+        );
         assert!(ph.is_err(), "should reject GET /v1/models with body > 0");
 
         let raw = make_req("POST", "/unknown_path", 5);
-        let ph = parse_headers(&raw, 0, raw.windows(4).position(|w| w == b"\r\n\r\n").unwrap());
+        let ph = parse_headers(
+            &raw,
+            0,
+            raw.windows(4).position(|w| w == b"\r\n\r\n").unwrap(),
+        );
         assert!(ph.is_err(), "should reject unknown paths with body > 0");
     }
 }
