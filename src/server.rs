@@ -562,4 +562,31 @@ mod tests {
         let resp = Response::too_many_requests();
         assert_eq!(resp.status, 429);
     }
+
+    #[test]
+    fn response_json_initialization() {
+        let resp = Response::json(200, b"{\"ok\":true}" as &'static [u8]);
+        assert_eq!(resp.status, 200);
+        assert_eq!(resp.body.as_ref(), b"{\"ok\":true}");
+        assert_eq!(resp.content_type, "application/json");
+        assert!(matches!(resp.body, Cow::Borrowed(_)));
+    }
+
+    #[test]
+    fn response_json_owned_body() {
+        let body_vec = vec![1, 2, 3, 4];
+        let resp = Response::json(201, body_vec);
+        assert_eq!(resp.status, 201);
+        assert_eq!(resp.body.as_ref(), &[1, 2, 3, 4]);
+        assert_eq!(resp.content_type, "application/json");
+        assert!(matches!(resp.body, Cow::Owned(_)));
+    }
+
+    #[test]
+    fn response_json_empty_body() {
+        let resp = Response::json(204, b"" as &'static [u8]);
+        assert_eq!(resp.status, 204);
+        assert!(resp.body.is_empty());
+        assert_eq!(resp.content_type, "application/json");
+    }
 }
