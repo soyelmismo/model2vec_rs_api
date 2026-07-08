@@ -227,15 +227,25 @@ where
         let body_end = buf_start + body_offset + content_length;
 
         if buf.len() < body_end {
-            let need = body_end - buf.len();
-            let old = buf.len();
-            buf.resize(old + need, 0);
-            tokio::time::timeout(IDLE_TIMEOUT, read_exact(&mut stream, &mut buf[old..]))
-                .await
-                .map_err(|_| {
-                    log::debug!("idle timeout reading body from {peer_ip}");
-                    io::Error::new(io::ErrorKind::TimedOut, "idle timeout")
-                })??;
+            tokio::time::timeout(IDLE_TIMEOUT, async {
+                while buf.len() < body_end {
+                    let to_read = std::cmp::min(read_buf.len(), body_end - buf.len());
+                    let n = read(&mut stream, &mut read_buf[..to_read]).await?;
+                    if n == 0 {
+                        return Err(io::Error::new(
+                            io::ErrorKind::UnexpectedEof,
+                            "connection closed",
+                        ));
+                    }
+                    buf.extend_from_slice(&read_buf[..n]);
+                }
+                Ok::<(), io::Error>(())
+            })
+            .await
+            .map_err(|_| {
+                log::debug!("idle timeout reading body from {peer_ip}");
+                io::Error::new(io::ErrorKind::TimedOut, "idle timeout")
+            })??;
         }
 
         let body = &buf[buf_start + body_offset..body_end];
@@ -340,8 +350,17 @@ fn parse_headers(buf: &[u8], buf_start: usize, header_end: usize) -> anyhow::Res
         .and_then(|h| std::str::from_utf8(h.value).ok())
         .map(|v| v.split(',').next().unwrap_or(v).trim().to_owned());
 
-    if content_length > MAX_BODY {
-        anyhow::bail!("body too large ({content_length} bytes)");
+    let base_path = path.split('?').next().unwrap_or(path.as_str());
+    let max_body_limit = match (method.as_str(), base_path) {
+        ("POST", "/v1/embeddings") | ("POST", "/embeddings") => MAX_BODY,
+        ("GET", "/health") | ("GET", "/v1/models") | ("GET", "/models") => 0,
+        _ => 0,
+    };
+
+    if content_length > max_body_limit {
+        anyhow::bail!(
+            "body too large ({content_length} bytes, max allowed: {max_body_limit} bytes)"
+        );
     }
 
     let body_offset = header_end - buf_start + 4;
@@ -369,22 +388,6 @@ async fn read(stream: &mut TcpStream, buf: &mut [u8]) -> io::Result<usize> {
         }
     })
     .await
-}
-
-async fn read_exact(stream: &mut TcpStream, mut buf: &mut [u8]) -> io::Result<()> {
-    while !buf.is_empty() {
-        let mut rb = ReadBuf::new(buf);
-        std::future::poll_fn(|cx| Pin::new(&mut *stream).poll_read(cx, &mut rb)).await?;
-        let n = rb.filled().len();
-        if n == 0 {
-            return Err(io::Error::new(
-                io::ErrorKind::UnexpectedEof,
-                "connection closed",
-            ));
-        }
-        buf = &mut buf[n..];
-    }
-    Ok(())
 }
 
 async fn write_all(stream: &mut TcpStream, mut buf: &[u8]) -> io::Result<()> {
@@ -561,5 +564,36 @@ mod tests {
     fn too_many_requests_response() {
         let resp = Response::too_many_requests();
         assert_eq!(resp.status, 429);
+    }
+
+    #[test]
+    fn parse_headers_body_limits() {
+        let make_req = |method: &str, path: &str, cl: usize| -> Vec<u8> {
+            format!("{} {} HTTP/1.1\r\ncontent-length: {}\r\n\r\n", method, path, cl).into_bytes()
+        };
+
+        let raw = make_req("POST", "/v1/embeddings", 5);
+        let ph = parse_headers(&raw, 0, raw.windows(4).position(|w| w == b"\r\n\r\n").unwrap());
+        assert!(ph.is_ok());
+
+        let raw = make_req("POST", "/v1/embeddings", 2 * 1024 * 1024 + 1);
+        let ph = parse_headers(&raw, 0, raw.windows(4).position(|w| w == b"\r\n\r\n").unwrap());
+        assert!(ph.is_err(), "should reject POST /v1/embeddings with body > 2MB");
+
+        let raw = make_req("GET", "/health", 1);
+        let ph = parse_headers(&raw, 0, raw.windows(4).position(|w| w == b"\r\n\r\n").unwrap());
+        assert!(ph.is_err(), "should reject GET /health with body > 0");
+
+        let raw = make_req("GET", "/health", 0);
+        let ph = parse_headers(&raw, 0, raw.windows(4).position(|w| w == b"\r\n\r\n").unwrap());
+        assert!(ph.is_ok(), "should allow GET /health with 0 body");
+
+        let raw = make_req("GET", "/v1/models", 5);
+        let ph = parse_headers(&raw, 0, raw.windows(4).position(|w| w == b"\r\n\r\n").unwrap());
+        assert!(ph.is_err(), "should reject GET /v1/models with body > 0");
+
+        let raw = make_req("POST", "/unknown_path", 5);
+        let ph = parse_headers(&raw, 0, raw.windows(4).position(|w| w == b"\r\n\r\n").unwrap());
+        assert!(ph.is_err(), "should reject unknown paths with body > 0");
     }
 }
