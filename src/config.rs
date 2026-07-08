@@ -221,4 +221,64 @@ mod tests {
         let models = parse_models("x:/models/sub/model").unwrap();
         assert_eq!(models[0].path, "/models/sub/model");
     }
+
+    #[test]
+    fn env_val_or_returns_env_var() {
+        unsafe {
+            std::env::set_var("TEST_ENV_VAL_OR_VAR1", "env_value");
+        }
+        let dotenv = HashMap::new();
+        let val = env_val_or("TEST_ENV_VAL_OR_VAR1", &dotenv, "default_value");
+        assert_eq!(val, "env_value");
+    }
+
+    #[test]
+    fn env_val_or_returns_dotenv_when_no_env_var() {
+        let mut dotenv = HashMap::new();
+        let _ = dotenv.insert("TEST_ENV_VAL_OR_VAR2".to_string(), "dotenv_value".to_string());
+        let val = env_val_or("TEST_ENV_VAL_OR_VAR2", &dotenv, "default_value");
+        assert_eq!(val, "dotenv_value");
+    }
+
+    #[test]
+    fn env_val_or_returns_default_when_no_env_or_dotenv() {
+        let dotenv = HashMap::new();
+        let val = env_val_or("TEST_ENV_VAL_OR_VAR3", &dotenv, "default_value");
+        assert_eq!(val, "default_value");
+    }
+
+    #[test]
+    fn env_val_opt_returns_env_var() {
+        unsafe {
+            std::env::set_var("TEST_ENV_VAL_OPT_VAR1", "env_value");
+        }
+        let dotenv = HashMap::new();
+        let val = env_val_opt("TEST_ENV_VAL_OPT_VAR1", &dotenv);
+        assert_eq!(val, Some("env_value".to_string()));
+    }
+
+    #[test]
+    fn env_val_opt_returns_dotenv_when_no_env_var() {
+        let mut dotenv = HashMap::new();
+        let _ = dotenv.insert("TEST_ENV_VAL_OPT_VAR2".to_string(), "dotenv_value".to_string());
+        let val = env_val_opt("TEST_ENV_VAL_OPT_VAR2", &dotenv);
+        assert_eq!(val, Some("dotenv_value".to_string()));
+    }
+
+    #[test]
+    fn env_val_opt_returns_none_when_empty_env_var() {
+        unsafe {
+            std::env::set_var("TEST_ENV_VAL_OPT_EMPTY", "");
+        }
+        let dotenv = HashMap::new();
+        let val = env_val_opt("TEST_ENV_VAL_OPT_EMPTY", &dotenv);
+        assert_eq!(val, None);
+    }
+
+    #[test]
+    fn env_val_opt_returns_none_when_no_env_or_dotenv() {
+        let dotenv = HashMap::new();
+        let val = env_val_opt("TEST_ENV_VAL_OPT_MISSING", &dotenv);
+        assert_eq!(val, None);
+    }
 }
