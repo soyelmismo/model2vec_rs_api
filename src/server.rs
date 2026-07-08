@@ -588,6 +588,10 @@ mod tests {
         let result = handle_connection(server_stream, state, &limiter, "127.0.0.1").await;
         assert!(result.is_err());
         let err_str = result.unwrap_err().to_string();
-        assert!(err_str.contains("connection closed"), "unexpected error: {}", err_str);
+        assert!(
+            err_str.contains("connection closed"),
+            "unexpected error: {}",
+            err_str
+        );
     }
 }
