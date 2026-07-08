@@ -79,13 +79,13 @@ mod tests {
 
     fn empty_state() -> AppState {
         let configs = vec![];
-        let registry = ModelRegistry::load_with_token(&configs, None).unwrap();
+        let registry = ModelRegistry::load_with_token(configs, None).unwrap();
         AppState::new(Arc::new(registry), None, 128)
     }
 
     fn authed_state(key: &str) -> AppState {
         let configs = vec![];
-        let registry = ModelRegistry::load_with_token(&configs, None).unwrap();
+        let registry = ModelRegistry::load_with_token(configs, None).unwrap();
         AppState::new(Arc::new(registry), Some(key.to_string()), 128)
     }
 

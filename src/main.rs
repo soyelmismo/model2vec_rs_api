@@ -53,7 +53,7 @@ fn main() -> Result<()> {
     }
 
     let registry = Arc::new(ModelRegistry::load_with_token(
-        &config.models,
+        config.models,
         config.hf_token.as_deref(),
     )?);
     let mut app_state = AppState::new(registry, config.api_key.clone(), config.max_batch_size);

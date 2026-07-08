@@ -37,12 +37,12 @@ mod tests {
     use std::sync::Arc;
 
     fn empty_state() -> Arc<AppState> {
-        let registry = ModelRegistry::load_with_token(&[], None).unwrap();
+        let registry = ModelRegistry::load_with_token(vec![], None).unwrap();
         Arc::new(AppState::new(Arc::new(registry), None, 128))
     }
 
     fn authed_state(key: &str) -> Arc<AppState> {
-        let registry = ModelRegistry::load_with_token(&[], None).unwrap();
+        let registry = ModelRegistry::load_with_token(vec![], None).unwrap();
         Arc::new(AppState::new(
             Arc::new(registry),
             Some(key.to_string()),

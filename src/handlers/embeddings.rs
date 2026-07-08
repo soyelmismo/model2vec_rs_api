@@ -165,12 +165,12 @@ mod tests {
     use std::sync::Arc;
 
     fn empty_state() -> AppState {
-        let registry = ModelRegistry::load_with_token(&[], None).unwrap();
+        let registry = ModelRegistry::load_with_token(vec![], None).unwrap();
         AppState::new(Arc::new(registry), None, 128)
     }
 
     fn authed_state(key: &str) -> AppState {
-        let registry = ModelRegistry::load_with_token(&[], None).unwrap();
+        let registry = ModelRegistry::load_with_token(vec![], None).unwrap();
         AppState::new(Arc::new(registry), Some(key.to_string()), 128)
     }
 
@@ -257,7 +257,7 @@ mod tests {
 
     #[tokio::test]
     async fn batch_exceeding_max_returns_413() {
-        let registry = ModelRegistry::load_with_token(&[], None).unwrap();
+        let registry = ModelRegistry::load_with_token(vec![], None).unwrap();
         let state = AppState::new(Arc::new(registry), None, 2);
 
         let texts: Vec<String> = (0..3).map(|i| format!("text{i}")).collect();

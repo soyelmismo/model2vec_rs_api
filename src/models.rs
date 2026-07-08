@@ -11,7 +11,7 @@ pub struct ModelRegistry {
 }
 
 impl ModelRegistry {
-    pub fn load_with_token(configs: &[ModelConfig], hf_token: Option<&str>) -> Result<Self> {
+    pub fn load_with_token(configs: Vec<ModelConfig>, hf_token: Option<&str>) -> Result<Self> {
         let mut models = HashMap::with_capacity(configs.len());
         let mut dims = HashMap::with_capacity(configs.len());
 
@@ -25,14 +25,15 @@ impl ModelRegistry {
 
             log::info!("model loaded successfully alias={} dims={}", cfg.alias, dim);
 
-            if let Some(prev) = models.insert(cfg.alias.clone(), model) {
+            let alias = cfg.alias;
+            if let Some(prev) = models.insert(alias.clone(), model) {
                 log::warn!(
                     "model alias '{}' was loaded twice — replacing previous instance",
-                    cfg.alias
+                    alias
                 );
                 drop(prev);
             }
-            let _ = dims.insert(cfg.alias.clone(), dim);
+            let _ = dims.insert(alias, dim);
         }
 
         let mut sorted_aliases: Vec<String> = models.keys().cloned().collect();
@@ -64,7 +65,7 @@ mod tests {
     use super::*;
 
     fn empty_registry() -> ModelRegistry {
-        ModelRegistry::load_with_token(&[], None).unwrap()
+        ModelRegistry::load_with_token(vec![], None).unwrap()
     }
 
     #[test]
