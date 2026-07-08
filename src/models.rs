@@ -27,10 +27,7 @@ impl ModelRegistry {
 
             let alias = cfg.alias;
             if let Some(prev) = models.insert(alias.clone(), model) {
-                log::warn!(
-                    "model alias '{}' was loaded twice — replacing previous instance",
-                    alias
-                );
+                log::warn!("model alias '{alias}' was loaded twice — replacing previous instance",);
                 drop(prev);
             }
             let _ = dims.insert(alias, dim);
