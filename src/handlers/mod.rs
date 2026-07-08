@@ -90,6 +90,14 @@ mod tests {
     }
 
     #[test]
+    fn test_with_auth_disabled_sets_flag() {
+        let state = empty_state();
+        assert!(!state.auth_disabled);
+        let state = state.with_auth_disabled();
+        assert!(state.auth_disabled);
+    }
+
+    #[test]
     fn auth_disabled_allows_all() {
         let state = empty_state();
         assert!(state.check_auth(&dummy_req(None)).is_ok());
