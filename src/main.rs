@@ -74,10 +74,10 @@ fn main() -> Result<()> {
 }
 
 fn load_dotenv_values() -> HashMap<String, String> {
-    let Ok(contents) = std::fs::read_to_string(".env") else {
-        return HashMap::new();
-    };
     let mut map = HashMap::new();
+    let Ok(contents) = std::fs::read_to_string(".env") else {
+        return map;
+    };
     for line in contents.lines() {
         let line = line.trim();
         if line.is_empty() || line.starts_with('#') {

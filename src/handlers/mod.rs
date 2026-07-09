@@ -45,21 +45,12 @@ impl AppState {
         };
         let provided = req.auth_header.and_then(|v| v.strip_prefix("Bearer ")).unwrap_or("");
 
-        if constant_time_eq(provided.as_bytes(), expected.as_bytes()) {
+        if constant_time_eq::constant_time_eq(provided.as_bytes(), expected.as_bytes()) {
             Ok(())
         } else {
             Err(Response::json(401, json_error(401, "unauthorized")))
         }
     }
-}
-
-#[inline]
-fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
-    let mut result = a.len() ^ b.len();
-    for (x, y) in a.iter().zip(b.iter()) {
-        result |= (x ^ y) as usize;
-    }
-    result == 0
 }
 
 #[cfg(test)]
@@ -87,6 +78,14 @@ mod tests {
         let configs = vec![];
         let registry = ModelRegistry::load_with_token(&configs, None).unwrap();
         AppState::new(Arc::new(registry), Some(key.to_string()), 128)
+    }
+
+    #[test]
+    fn test_with_auth_disabled_sets_flag() {
+        let state = empty_state();
+        assert!(!state.auth_disabled);
+        let state = state.with_auth_disabled();
+        assert!(state.auth_disabled);
     }
 
     #[test]
@@ -128,20 +127,5 @@ mod tests {
         let state = authed_state("secret");
         let err = state.check_auth(&dummy_req(Some("secret"))).unwrap_err();
         assert_eq!(err.status, 401);
-    }
-
-    #[test]
-    fn constant_time_eq_same() {
-        assert!(constant_time_eq(b"abc", b"abc"));
-    }
-
-    #[test]
-    fn constant_time_eq_different() {
-        assert!(!constant_time_eq(b"abc", b"abd"));
-    }
-
-    #[test]
-    fn constant_time_eq_different_lengths() {
-        assert!(!constant_time_eq(b"abc", b"abcd"));
     }
 }
