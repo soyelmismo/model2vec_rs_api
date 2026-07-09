@@ -85,9 +85,10 @@ fn load_dotenv_values() -> HashMap<String, String> {
         }
         if let Some((key, val)) = line.split_once('=') {
             let k = key.trim();
-            let _ = map
-                .entry(k.to_string())
-                .or_insert_with(|| val.trim().trim_matches('"').trim_matches('\'').to_string());
+            if !map.contains_key(k) {
+                let v = val.trim().trim_matches('"').trim_matches('\'').to_string();
+                let _ = map.insert(k.to_string(), v);
+            }
         }
     }
     map
