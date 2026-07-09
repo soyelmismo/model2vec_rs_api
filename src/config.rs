@@ -35,30 +35,8 @@ impl Config {
         let api_key = env_val_opt("M2V_API_KEY", dotenv);
         let auth_disabled = env_val_opt("M2V_AUTH_DISABLED", dotenv).as_deref() == Some("true");
         let hf_token = env_val_opt("M2V_HF_TOKEN", dotenv);
-        let worker_threads = match env_val_or("M2V_WORKER_THREADS", dotenv, "4").parse::<usize>() {
-            Ok(n) if n > 0 => n,
-            Ok(_) => {
-                log::warn!("M2V_WORKER_THREADS=0 is invalid, defaulting to 4");
-                4
-            }
-            Err(_) => {
-                log::warn!("M2V_WORKER_THREADS is not a valid number, defaulting to 4");
-                4
-            }
-        };
-
-        let max_batch_size = match env_val_or("M2V_MAX_BATCH_SIZE", dotenv, "128").parse::<usize>()
-        {
-            Ok(n) if n > 0 => n,
-            Ok(_) => {
-                log::warn!("M2V_MAX_BATCH_SIZE=0 is invalid, defaulting to 128");
-                128
-            }
-            Err(_) => {
-                log::warn!("M2V_MAX_BATCH_SIZE is not a valid number, defaulting to 128");
-                128
-            }
-        };
+        let worker_threads = env_val_usize("M2V_WORKER_THREADS", dotenv, 4);
+        let max_batch_size = env_val_usize("M2V_MAX_BATCH_SIZE", dotenv, 128);
 
         if api_key.is_none() && !auth_disabled {
             log::error!(
@@ -103,6 +81,20 @@ fn env_val_opt(key: &str, dotenv: &HashMap<String, String>) -> Option<String> {
         .ok()
         .or_else(|| dotenv.get(key).cloned())
         .filter(|s| !s.is_empty())
+}
+
+fn env_val_usize(key: &str, dotenv: &HashMap<String, String>, default: usize) -> usize {
+    match env_val_or(key, dotenv, &default.to_string()).parse::<usize>() {
+        Ok(n) if n > 0 => n,
+        Ok(_) => {
+            log::warn!("{key}=0 is invalid, defaulting to {default}");
+            default
+        }
+        Err(_) => {
+            log::warn!("{key} is not a valid number, defaulting to {default}");
+            default
+        }
+    }
 }
 
 fn parse_models(raw: &str) -> Result<Vec<ModelConfig>> {
