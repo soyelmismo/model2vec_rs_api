@@ -23,6 +23,7 @@ anyhow = "1.0"
 log = "0.4"
 itoa = "1"
 async-trait = "0.1"
+constant_time_eq = "0.4.2"
 
 [profile.release]
 opt-level = 3
@@ -36,10 +37,7 @@ unsafe_code = "forbid"
 unused_results = "deny"
 
 [lints.clippy]
-pedantic = "warn"
-nursery = "warn"
-
-# Note: `cargo` group intentionally omitted.
-# Its `multiple_crate_versions` lint warns about transitive deps
-# inside model2vec-rs (e.g. base64 0.13 via tokenizers vs 0.22 via hf-hub)
-# that we cannot fix from here.
+pedantic = { level = "warn", priority = -1 }
+nursery = { level = "warn", priority = -1 }
+cargo = { level = "warn", priority = -1 }
+multiple_crate_versions = "allow"

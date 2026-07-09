@@ -326,28 +326,71 @@ fn parse_headers(buf: &[u8], buf_start: usize, header_end: usize) -> anyhow::Res
     let path = parsed.path.unwrap_or("/").to_owned();
     let http11 = parsed.version.unwrap_or(0) == 1;
 
-    let conn_val = header_val(parsed.headers, "connection");
+    let mut conn_val = None;
+    let mut content_length_val = None;
+    let mut auth = None;
+    let mut forwarded_for = None;
+
+    let mut matches = 0;
+    for h in parsed.headers {
+        let name = h.name.as_bytes();
+        let name_len = name.len();
+        if name_len == 10
+            && (name[0] == b'c' || name[0] == b'C')
+            && h.name.eq_ignore_ascii_case("connection")
+        {
+            if conn_val.is_none() {
+                conn_val = Some(h.value);
+                matches += 1;
+            }
+        } else if name_len == 14
+            && (name[0] == b'c' || name[0] == b'C')
+            && h.name.eq_ignore_ascii_case("content-length")
+        {
+            if content_length_val.is_none() {
+                content_length_val = Some(h.value);
+                matches += 1;
+            }
+        } else if name_len == 13
+            && (name[0] == b'a' || name[0] == b'A')
+            && h.name.eq_ignore_ascii_case("authorization")
+        {
+            if auth.is_none() {
+                auth = Some(h.value);
+                matches += 1;
+            }
+        } else if name_len == 15
+            && (name[0] == b'x' || name[0] == b'X')
+            && h.name.eq_ignore_ascii_case("x-forwarded-for")
+            && forwarded_for.is_none()
+        {
+            forwarded_for = Some(h.value);
+            matches += 1;
+        }
+
+        if matches == 4 {
+            break;
+        }
+    }
+
+    let conn_val = conn_val.and_then(|v| std::str::from_utf8(v).ok()).unwrap_or("");
     let keep_alive = if http11 {
         !conn_val.eq_ignore_ascii_case("close")
     } else {
         conn_val.eq_ignore_ascii_case("keep-alive")
     };
 
-    let content_length: usize =
-        header_val(parsed.headers, "content-length").trim().parse().unwrap_or(0);
+    let content_length: usize = content_length_val
+        .and_then(|v| std::str::from_utf8(v).ok())
+        .unwrap_or("")
+        .trim()
+        .parse()
+        .unwrap_or(0);
 
-    let auth: Option<String> = parsed
-        .headers
-        .iter()
-        .find(|h| h.name.eq_ignore_ascii_case("authorization"))
-        .and_then(|h| std::str::from_utf8(h.value).ok())
-        .map(str::to_owned);
+    let auth = auth.and_then(|v| std::str::from_utf8(v).ok()).map(str::to_owned);
 
-    let forwarded_for: Option<String> = parsed
-        .headers
-        .iter()
-        .find(|h| h.name.eq_ignore_ascii_case("x-forwarded-for"))
-        .and_then(|h| std::str::from_utf8(h.value).ok())
+    let forwarded_for = forwarded_for
+        .and_then(|v| std::str::from_utf8(v).ok())
         .map(|v| v.split(',').next().unwrap_or(v).trim().to_owned());
 
     let base_path = path.split('?').next().unwrap_or(path.as_str());
@@ -407,30 +450,7 @@ async fn write_all(stream: &mut TcpStream, mut buf: &[u8]) -> io::Result<()> {
 
 #[inline]
 fn find_header_end(buf: &[u8]) -> Option<usize> {
-    if buf.len() < 4 {
-        return None;
-    }
-    let end = buf.len() - 3;
-    let mut i = 0;
-    while i < end {
-        if buf[i] == b'\r' {
-            if buf[i + 1] == b'\n' && buf[i + 2] == b'\r' && buf[i + 3] == b'\n' {
-                return Some(i);
-            }
-            i += 2;
-        } else {
-            i += 1;
-        }
-    }
-    None
-}
-
-fn header_val<'a>(headers: &'a [httparse::Header<'a>], name: &str) -> &'a str {
-    headers
-        .iter()
-        .find(|h| h.name.eq_ignore_ascii_case(name))
-        .and_then(|h| std::str::from_utf8(h.value).ok())
-        .unwrap_or("")
+    buf.windows(4).position(|w| w == b"\r\n\r\n")
 }
 
 const fn status_reason(code: u16) -> &'static str {
@@ -483,29 +503,6 @@ mod tests {
     fn status_reason_unknown_default() {
         assert_eq!(status_reason(999), "Unknown");
         assert_eq!(status_reason(0), "Unknown");
-    }
-
-    #[test]
-    fn header_val_found() {
-        let raw = b"GET / HTTP/1.1\r\ncontent-type: application/json\r\n\r\n";
-        let mut headers = [httparse::EMPTY_HEADER; 2];
-        let mut req = httparse::Request::new(&mut headers);
-        let _ = req.parse(raw);
-        assert_eq!(header_val(req.headers, "content-type"), "application/json");
-    }
-
-    #[test]
-    fn header_val_not_found() {
-        let raw = b"GET / HTTP/1.1\r\nx-custom: val\r\n\r\n";
-        let mut headers = [httparse::EMPTY_HEADER; 2];
-        let mut req = httparse::Request::new(&mut headers);
-        let _ = req.parse(raw);
-        assert_eq!(header_val(req.headers, "nonexistent"), "");
-    }
-
-    #[test]
-    fn header_val_empty_headers() {
-        assert_eq!(header_val(&[], "anything"), "");
     }
 
     #[test]
@@ -621,5 +618,63 @@ mod tests {
             raw.windows(4).position(|w| w == b"\r\n\r\n").unwrap(),
         );
         assert!(ph.is_err(), "should reject unknown paths with body > 0");
+    }
+
+    #[tokio::test]
+    async fn handle_connection_read_eof() {
+        struct DummyRoutable;
+        #[async_trait::async_trait]
+        impl Routable for Arc<DummyRoutable> {
+            async fn route(&self, _req: &Request<'_>) -> Response {
+                Response::not_found()
+            }
+        }
+
+        let state = Arc::new(DummyRoutable);
+        let limiter = tokio::sync::Mutex::new(RateLimiter::new(100, Duration::from_mins(1)));
+
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+
+        let client_stream = TcpStream::connect(addr).await.unwrap();
+        let (server_stream, _) = listener.accept().await.unwrap();
+
+        // Drop client to cause EOF on read
+        drop(client_stream);
+
+        let result = handle_connection(server_stream, state, &limiter, "127.0.0.1").await;
+        assert!(result.is_err());
+        let err_str = result.unwrap_err().to_string();
+        assert!(
+            err_str.contains("connection closed"),
+            "unexpected error: {err_str}",
+        );
+    }
+
+    #[test]
+    fn response_json_initialization() {
+        let resp = Response::json(200, b"{\"ok\":true}" as &'static [u8]);
+        assert_eq!(resp.status, 200);
+        assert_eq!(resp.body.as_ref(), b"{\"ok\":true}");
+        assert_eq!(resp.content_type, "application/json");
+        assert!(matches!(resp.body, Cow::Borrowed(_)));
+    }
+
+    #[test]
+    fn response_json_owned_body() {
+        let body_vec = vec![1, 2, 3, 4];
+        let resp = Response::json(201, body_vec);
+        assert_eq!(resp.status, 201);
+        assert_eq!(resp.body.as_ref(), &[1, 2, 3, 4]);
+        assert_eq!(resp.content_type, "application/json");
+        assert!(matches!(resp.body, Cow::Owned(_)));
+    }
+
+    #[test]
+    fn response_json_empty_body() {
+        let resp = Response::json(204, b"" as &'static [u8]);
+        assert_eq!(resp.status, 204);
+        assert!(resp.body.is_empty());
+        assert_eq!(resp.content_type, "application/json");
     }
 }

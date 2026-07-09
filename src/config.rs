@@ -35,30 +35,8 @@ impl Config {
         let api_key = env_val_opt("M2V_API_KEY", dotenv);
         let auth_disabled = env_val_opt("M2V_AUTH_DISABLED", dotenv).as_deref() == Some("true");
         let hf_token = env_val_opt("M2V_HF_TOKEN", dotenv);
-        let worker_threads = match env_val_or("M2V_WORKER_THREADS", dotenv, "4").parse::<usize>() {
-            Ok(n) if n > 0 => n,
-            Ok(_) => {
-                log::warn!("M2V_WORKER_THREADS=0 is invalid, defaulting to 4");
-                4
-            }
-            Err(_) => {
-                log::warn!("M2V_WORKER_THREADS is not a valid number, defaulting to 4");
-                4
-            }
-        };
-
-        let max_batch_size = match env_val_or("M2V_MAX_BATCH_SIZE", dotenv, "128").parse::<usize>()
-        {
-            Ok(n) if n > 0 => n,
-            Ok(_) => {
-                log::warn!("M2V_MAX_BATCH_SIZE=0 is invalid, defaulting to 128");
-                128
-            }
-            Err(_) => {
-                log::warn!("M2V_MAX_BATCH_SIZE is not a valid number, defaulting to 128");
-                128
-            }
-        };
+        let worker_threads = env_val_usize("M2V_WORKER_THREADS", dotenv, 4);
+        let max_batch_size = env_val_usize("M2V_MAX_BATCH_SIZE", dotenv, 128);
 
         if api_key.is_none() && !auth_disabled {
             log::error!(
@@ -103,6 +81,20 @@ fn env_val_opt(key: &str, dotenv: &HashMap<String, String>) -> Option<String> {
         .ok()
         .or_else(|| dotenv.get(key).cloned())
         .filter(|s| !s.is_empty())
+}
+
+fn env_val_usize(key: &str, dotenv: &HashMap<String, String>, default: usize) -> usize {
+    match env_val_or(key, dotenv, &default.to_string()).parse::<usize>() {
+        Ok(n) if n > 0 => n,
+        Ok(_) => {
+            log::warn!("{key}=0 is invalid, defaulting to {default}");
+            default
+        }
+        Err(_) => {
+            log::warn!("{key} is not a valid number, defaulting to {default}");
+            default
+        }
+    }
 }
 
 fn parse_models(raw: &str) -> Result<Vec<ModelConfig>> {
@@ -220,5 +212,82 @@ mod tests {
     fn absolute_path_under_models_allowed() {
         let models = parse_models("x:/models/sub/model").unwrap();
         assert_eq!(models[0].path, "/models/sub/model");
+    }
+
+    #[test]
+    fn env_val_or_returns_env_var() {
+        // std::env::set_var is unsafe in 1.80+ and we have #![forbid(unsafe_code)].
+        // Just use an existing env var like CARGO or USER to test the 'env var exists' path.
+        // We just need to make sure the function returns *something* from the environment.
+        let key = if std::env::var("USER").is_ok() {
+            "USER"
+        } else {
+            "PATH" // Almost guaranteed to exist
+        };
+        let expected = std::env::var(key).unwrap_or_default();
+        let dotenv = HashMap::new();
+        let val = env_val_or(key, &dotenv, "default_value");
+        assert_eq!(val, expected);
+    }
+
+    #[test]
+    fn env_val_or_returns_dotenv_when_no_env_var() {
+        let mut dotenv = HashMap::new();
+        let _ = dotenv.insert(
+            "TEST_ENV_VAL_OR_VAR2".to_string(),
+            "dotenv_value".to_string(),
+        );
+        let val = env_val_or("TEST_ENV_VAL_OR_VAR2", &dotenv, "default_value");
+        assert_eq!(val, "dotenv_value");
+    }
+
+    #[test]
+    fn env_val_or_returns_default_when_no_env_or_dotenv() {
+        let dotenv = HashMap::new();
+        let val = env_val_or("TEST_ENV_VAL_OR_VAR3", &dotenv, "default_value");
+        assert_eq!(val, "default_value");
+    }
+
+    #[test]
+    fn env_val_opt_returns_env_var() {
+        let key = if std::env::var("USER").is_ok() {
+            "USER"
+        } else {
+            "PATH"
+        };
+        let expected = std::env::var(key).unwrap_or_default();
+        let dotenv = HashMap::new();
+        let val = env_val_opt(key, &dotenv);
+        assert_eq!(val, Some(expected));
+    }
+
+    #[test]
+    fn env_val_opt_returns_dotenv_when_no_env_var() {
+        let mut dotenv = HashMap::new();
+        let _ = dotenv.insert(
+            "TEST_ENV_VAL_OPT_VAR2".to_string(),
+            "dotenv_value".to_string(),
+        );
+        let val = env_val_opt("TEST_ENV_VAL_OPT_VAR2", &dotenv);
+        assert_eq!(val, Some("dotenv_value".to_string()));
+    }
+
+    #[test]
+    fn env_val_opt_returns_none_when_empty_env_var() {
+        // Can't reliably set an empty env var without unsafe.
+        // We'll test with a variable we know doesn't exist.
+        // The empty string logic is in the `filter(|s| !s.is_empty())` part of env_val_opt,
+        // so we can test that by setting a dotenv value to "".
+        let mut dotenv = HashMap::new();
+        let _ = dotenv.insert("TEST_ENV_VAL_OPT_EMPTY".to_string(), String::new());
+        let val = env_val_opt("TEST_ENV_VAL_OPT_EMPTY", &dotenv);
+        assert_eq!(val, None);
+    }
+
+    #[test]
+    fn env_val_opt_returns_none_when_no_env_or_dotenv() {
+        let dotenv = HashMap::new();
+        let val = env_val_opt("TEST_ENV_VAL_OPT_MISSING", &dotenv);
+        assert_eq!(val, None);
     }
 }
