@@ -213,4 +213,81 @@ mod tests {
         let models = parse_models("x:/models/sub/model").unwrap();
         assert_eq!(models[0].path, "/models/sub/model");
     }
+
+    #[test]
+    fn env_val_or_returns_env_var() {
+        // std::env::set_var is unsafe in 1.80+ and we have #![forbid(unsafe_code)].
+        // Just use an existing env var like CARGO or USER to test the 'env var exists' path.
+        // We just need to make sure the function returns *something* from the environment.
+        let key = if std::env::var("USER").is_ok() {
+            "USER"
+        } else {
+            "PATH" // Almost guaranteed to exist
+        };
+        let expected = std::env::var(key).unwrap_or_default();
+        let dotenv = HashMap::new();
+        let val = env_val_or(key, &dotenv, "default_value");
+        assert_eq!(val, expected);
+    }
+
+    #[test]
+    fn env_val_or_returns_dotenv_when_no_env_var() {
+        let mut dotenv = HashMap::new();
+        let _ = dotenv.insert(
+            "TEST_ENV_VAL_OR_VAR2".to_string(),
+            "dotenv_value".to_string(),
+        );
+        let val = env_val_or("TEST_ENV_VAL_OR_VAR2", &dotenv, "default_value");
+        assert_eq!(val, "dotenv_value");
+    }
+
+    #[test]
+    fn env_val_or_returns_default_when_no_env_or_dotenv() {
+        let dotenv = HashMap::new();
+        let val = env_val_or("TEST_ENV_VAL_OR_VAR3", &dotenv, "default_value");
+        assert_eq!(val, "default_value");
+    }
+
+    #[test]
+    fn env_val_opt_returns_env_var() {
+        let key = if std::env::var("USER").is_ok() {
+            "USER"
+        } else {
+            "PATH"
+        };
+        let expected = std::env::var(key).unwrap_or_default();
+        let dotenv = HashMap::new();
+        let val = env_val_opt(key, &dotenv);
+        assert_eq!(val, Some(expected));
+    }
+
+    #[test]
+    fn env_val_opt_returns_dotenv_when_no_env_var() {
+        let mut dotenv = HashMap::new();
+        let _ = dotenv.insert(
+            "TEST_ENV_VAL_OPT_VAR2".to_string(),
+            "dotenv_value".to_string(),
+        );
+        let val = env_val_opt("TEST_ENV_VAL_OPT_VAR2", &dotenv);
+        assert_eq!(val, Some("dotenv_value".to_string()));
+    }
+
+    #[test]
+    fn env_val_opt_returns_none_when_empty_env_var() {
+        // Can't reliably set an empty env var without unsafe.
+        // We'll test with a variable we know doesn't exist.
+        // The empty string logic is in the `filter(|s| !s.is_empty())` part of env_val_opt,
+        // so we can test that by setting a dotenv value to "".
+        let mut dotenv = HashMap::new();
+        let _ = dotenv.insert("TEST_ENV_VAL_OPT_EMPTY".to_string(), String::new());
+        let val = env_val_opt("TEST_ENV_VAL_OPT_EMPTY", &dotenv);
+        assert_eq!(val, None);
+    }
+
+    #[test]
+    fn env_val_opt_returns_none_when_no_env_or_dotenv() {
+        let dotenv = HashMap::new();
+        let val = env_val_opt("TEST_ENV_VAL_OPT_MISSING", &dotenv);
+        assert_eq!(val, None);
+    }
 }
