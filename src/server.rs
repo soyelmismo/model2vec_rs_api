@@ -560,6 +560,37 @@ mod tests {
         assert_eq!(resp.status, 429);
     }
 
+    #[tokio::test]
+    async fn handle_connection_read_eof() {
+        struct DummyRoutable;
+        #[async_trait::async_trait]
+        impl Routable for Arc<DummyRoutable> {
+            async fn route(&self, _req: &Request<'_>) -> Response {
+                Response::not_found()
+            }
+        }
+
+        let state = Arc::new(DummyRoutable);
+        let limiter = tokio::sync::Mutex::new(RateLimiter::new(100, Duration::from_mins(1)));
+
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+
+        let client_stream = TcpStream::connect(addr).await.unwrap();
+        let (server_stream, _) = listener.accept().await.unwrap();
+
+        // Drop client to cause EOF on read
+        drop(client_stream);
+
+        let result = handle_connection(server_stream, state, &limiter, "127.0.0.1").await;
+        assert!(result.is_err());
+        let err_str = result.unwrap_err().to_string();
+        assert!(
+            err_str.contains("connection closed"),
+            "unexpected error: {err_str}",
+        );
+    }
+
     #[test]
     fn response_json_initialization() {
         let resp = Response::json(200, b"{\"ok\":true}" as &'static [u8]);
