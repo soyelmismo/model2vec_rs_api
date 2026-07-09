@@ -53,7 +53,7 @@ impl<const N: usize> ArrayString<N> {
         }
     }
 
-    #[allow(dead_code)]
+    #[cfg(test)]
     fn as_str(&self) -> &str {
         std::str::from_utf8(&self.buf[..self.len]).unwrap_or("")
     }
@@ -107,18 +107,8 @@ pub fn init() {
     log::set_max_level(level);
 }
 
-const fn parse_level(s: &str) -> LevelFilter {
-    if s.eq_ignore_ascii_case("error") {
-        LevelFilter::Error
-    } else if s.eq_ignore_ascii_case("warn") {
-        LevelFilter::Warn
-    } else if s.eq_ignore_ascii_case("debug") {
-        LevelFilter::Debug
-    } else if s.eq_ignore_ascii_case("trace") {
-        LevelFilter::Trace
-    } else {
-        LevelFilter::Info
-    }
+fn parse_level(s: &str) -> LevelFilter {
+    s.parse().unwrap_or(LevelFilter::Info)
 }
 
 #[cfg(test)]
