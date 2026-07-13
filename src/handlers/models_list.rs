@@ -4,16 +4,16 @@ use crate::handlers::AppState;
 use crate::server::{Request, Response};
 
 #[derive(Serialize)]
-struct ModelEntry {
-    id: String,
+struct ModelEntry<'a> {
+    id: &'a str,
     object: &'static str,
     owned_by: &'static str,
 }
 
 #[derive(Serialize)]
-struct ModelsResponse {
+struct ModelsResponse<'a> {
     object: &'static str,
-    data: Vec<ModelEntry>,
+    data: Vec<ModelEntry<'a>>,
 }
 
 pub fn handle(state: &AppState, req: &Request<'_>) -> Response {
@@ -26,7 +26,7 @@ pub fn handle(state: &AppState, req: &Request<'_>) -> Response {
         .aliases()
         .iter()
         .map(|alias| ModelEntry {
-            id: alias.clone(),
+            id: alias.as_str(),
             object: "model",
             owned_by: "model2vec-api",
         })
