@@ -180,7 +180,6 @@ mod tests {
             path: "/v1/embeddings",
             body,
             auth_header: auth,
-            forwarded_for: None,
         }
     }
 
