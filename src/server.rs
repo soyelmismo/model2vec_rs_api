@@ -208,12 +208,15 @@ where
             method,
             path,
             auth,
+            forwarded_for,
             keep_alive,
             content_length,
             body_offset,
         } = parse_headers(&buf, buf_start, header_end)?;
 
-        if !limiter.lock().await.check(peer_ip) {
+        let rate_limit_key = forwarded_for.as_deref().unwrap_or(peer_ip);
+
+        if !limiter.lock().await.check(rate_limit_key) {
             let resp = Response::too_many_requests();
             write_response(&mut stream, &mut head_buf, &mut itoa_buf, &resp).await?;
             return Ok(());
@@ -303,6 +306,7 @@ struct ParsedHeaders {
     method: String,
     path: String,
     auth: Option<String>,
+    forwarded_for: Option<String>,
     keep_alive: bool,
     content_length: usize,
     body_offset: usize,
@@ -322,6 +326,7 @@ fn parse_headers(buf: &[u8], buf_start: usize, header_end: usize) -> anyhow::Res
     let mut conn_val = None;
     let mut content_length_val = None;
     let mut auth = None;
+    let mut forwarded_for = None;
 
     let mut matches = 0;
     for h in parsed.headers {
@@ -351,9 +356,16 @@ fn parse_headers(buf: &[u8], buf_start: usize, header_end: usize) -> anyhow::Res
                 auth = Some(h.value);
                 matches += 1;
             }
+        } else if name_len == 15
+            && (name[0] == b'x' || name[0] == b'X')
+            && h.name.eq_ignore_ascii_case("x-forwarded-for")
+            && forwarded_for.is_none()
+        {
+            forwarded_for = Some(h.value);
+            matches += 1;
         }
 
-        if matches == 3 {
+        if matches == 4 {
             break;
         }
     }
@@ -374,6 +386,10 @@ fn parse_headers(buf: &[u8], buf_start: usize, header_end: usize) -> anyhow::Res
 
     let auth = auth.and_then(|v| std::str::from_utf8(v).ok()).map(str::to_owned);
 
+    let forwarded_for = forwarded_for
+        .and_then(|v| std::str::from_utf8(v).ok())
+        .map(|v| v.split(',').next().unwrap_or(v).trim().to_owned());
+
     let base_path = path.split('?').next().unwrap_or(path.as_str());
     let max_body_limit = match (method.as_str(), base_path) {
         ("POST", "/v1/embeddings" | "/embeddings") => MAX_BODY,
@@ -392,6 +408,7 @@ fn parse_headers(buf: &[u8], buf_start: usize, header_end: usize) -> anyhow::Res
         method,
         path,
         auth,
+        forwarded_for,
         keep_alive,
         content_length,
         body_offset,
