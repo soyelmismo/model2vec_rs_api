@@ -40,4 +40,8 @@ unused_results = "deny"
 pedantic = { level = "warn", priority = -1 }
 nursery = { level = "warn", priority = -1 }
 cargo = { level = "warn", priority = -1 }
+# Note: `multiple_crate_versions` lint is intentionally allowed.
+# It warns about transitive deps inside model2vec-rs
+# (e.g. base64 0.13 via tokenizers vs 0.22 via hf-hub)
+# that we cannot fix from here.
 multiple_crate_versions = "allow"
