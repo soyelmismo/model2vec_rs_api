@@ -123,33 +123,11 @@ fn validate_model_path(path: &str, alias: &str) -> Result<()> {
     }
 
     if path.starts_with('/') {
-        let mut normalized = std::path::PathBuf::new();
-        for component in std::path::Path::new(path).components() {
-            match component {
-                std::path::Component::Prefix(_) | std::path::Component::RootDir => {
-                    normalized.push(component);
-                }
-                std::path::Component::CurDir => {}
-                std::path::Component::ParentDir => {
-                    let _ = normalized.pop();
-                }
-                std::path::Component::Normal(c) => {
-                    normalized.push(c);
-                }
-            }
-        }
-
-        let canonical_str = normalized.to_string_lossy();
-        // Append a trailing slash for prefix matching if it doesn't have one,
-        // so that "/models_fake" doesn't match the prefix "/models/".
-        let mut canonical_with_slash = canonical_str.to_string();
-        if !canonical_with_slash.ends_with('/') {
-            canonical_with_slash.push('/');
-        }
-
-        let allowed = ALLOWED_LOCAL_PREFIXES
-            .iter()
-            .any(|prefix| canonical_with_slash.starts_with(prefix));
+        let canonical =
+            std::fs::canonicalize(path).unwrap_or_else(|_| std::path::PathBuf::from(path));
+        let canonical_str = canonical.to_string_lossy();
+        let canonical_str = canonical_str.replace('\\', "/");
+        let allowed = ALLOWED_LOCAL_PREFIXES.iter().any(|prefix| canonical_str.starts_with(prefix));
         if !allowed {
             anyhow::bail!(
                 "local path for '{alias}' must resolve under one of {ALLOWED_LOCAL_PREFIXES:?} — got: {path} (resolved: {canonical_str})"
