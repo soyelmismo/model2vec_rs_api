@@ -24,8 +24,6 @@ pub struct Request<'a> {
     pub path: &'a str,
     pub body: &'a [u8],
     pub auth_header: Option<&'a str>,
-    #[allow(dead_code)]
-    pub forwarded_for: Option<&'a str>,
 }
 
 pub struct Response {
@@ -254,7 +252,6 @@ where
             path: &path,
             body,
             auth_header: auth.as_deref(),
-            forwarded_for: forwarded_for.as_deref(),
         };
         let response = state.route(&request).await;
 
