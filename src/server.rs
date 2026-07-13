@@ -683,6 +683,9 @@ mod tests {
         let resp = Response::not_found();
         assert_eq!(resp.status, 404);
         assert_eq!(resp.content_type, "application/json");
-        assert_eq!(resp.body.as_ref(), br#"{"error":{"message":"not found","type":"api_error","code":404}}"#);
+        assert_eq!(
+            resp.body.as_ref(),
+            br#"{"error":{"message":"not found","type":"api_error","code":404}}"#
+        );
     }
 }
