@@ -332,27 +332,24 @@ fn parse_headers(buf: &[u8], buf_start: usize, header_end: usize) -> anyhow::Res
         if name_len == 10
             && (name[0] == b'c' || name[0] == b'C')
             && h.name.eq_ignore_ascii_case("connection")
+            && conn_val.is_none()
         {
-            if conn_val.is_none() {
-                conn_val = Some(h.value);
-                matches += 1;
-            }
+            conn_val = Some(h.value);
+            matches += 1;
         } else if name_len == 14
             && (name[0] == b'c' || name[0] == b'C')
             && h.name.eq_ignore_ascii_case("content-length")
+            && content_length_val.is_none()
         {
-            if content_length_val.is_none() {
-                content_length_val = Some(h.value);
-                matches += 1;
-            }
+            content_length_val = Some(h.value);
+            matches += 1;
         } else if name_len == 13
             && (name[0] == b'a' || name[0] == b'A')
             && h.name.eq_ignore_ascii_case("authorization")
+            && auth.is_none()
         {
-            if auth.is_none() {
-                auth = Some(h.value);
-                matches += 1;
-            }
+            auth = Some(h.value);
+            matches += 1;
         }
 
         if matches == 3 {
