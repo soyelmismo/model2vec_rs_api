@@ -563,6 +563,17 @@ mod tests {
     }
 
     #[test]
+    fn method_not_allowed_response() {
+        let resp = Response::method_not_allowed();
+        assert_eq!(resp.status, 405);
+        assert_eq!(resp.content_type, "application/json");
+        assert_eq!(
+            resp.body.as_ref(),
+            br#"{"error":{"message":"method not allowed","type":"api_error","code":405}}"#
+        );
+    }
+
+    #[test]
     fn parse_headers_body_limits() {
         let make_req = |method: &str, path: &str, cl: usize| -> Vec<u8> {
             format!("{method} {path} HTTP/1.1\r\ncontent-length: {cl}\r\n\r\n").into_bytes()
