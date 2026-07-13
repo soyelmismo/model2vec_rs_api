@@ -1,7 +1,5 @@
 use std::sync::Arc;
 
-use subtle::ConstantTimeEq;
-
 use crate::{
     error::json_error,
     models::ModelRegistry,
@@ -47,7 +45,7 @@ impl AppState {
         };
         let provided = req.auth_header.and_then(|v| v.strip_prefix("Bearer ")).unwrap_or("");
 
-        if bool::from(provided.as_bytes().ct_eq(expected.as_bytes())) {
+        if constant_time_eq::constant_time_eq(provided.as_bytes(), expected.as_bytes()) {
             Ok(())
         } else {
             Err(Response::json(401, json_error(401, "unauthorized")))

@@ -249,6 +249,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "constant_time_eq"
+version = "0.4.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3d52eff69cd5e647efe296129160853a42795992097e8af39800e1060caeea9b"
+
+[[package]]
 name = "crc32fast"
 version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -804,13 +810,13 @@ version = "0.0.4"
 dependencies = [
  "anyhow",
  "async-trait",
+ "constant_time_eq",
  "httparse",
  "itoa",
  "log",
  "model2vec-rs",
  "serde",
  "serde_json",
- "subtle",
  "thiserror",
  "tokio",
 ]
