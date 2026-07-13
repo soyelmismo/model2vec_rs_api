@@ -147,7 +147,9 @@ fn validate_model_path(path: &str, alias: &str) -> Result<()> {
             canonical_with_slash.push('/');
         }
 
-        let allowed = ALLOWED_LOCAL_PREFIXES.iter().any(|prefix| canonical_with_slash.starts_with(prefix));
+        let allowed = ALLOWED_LOCAL_PREFIXES
+            .iter()
+            .any(|prefix| canonical_with_slash.starts_with(prefix));
         if !allowed {
             anyhow::bail!(
                 "local path for '{alias}' must resolve under one of {ALLOWED_LOCAL_PREFIXES:?} — got: {path} (resolved: {canonical_str})"
