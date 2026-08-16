@@ -16,9 +16,8 @@ ARG TARGETARCH
 
 # Copy the pre-built binary for target architecture.
 COPY --chown=65532:65532 bin/${TARGETARCH}/model2vec-api /model2vec-api
-
-# CA certificates so HTTPS (HuggingFace downloads) works at runtime.
-COPY --from=busybox:1.36 /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
+# NOTE: distroless images already ship ca-certificates + tzdata, so no
+# extra cert copy is needed — HTTPS (HuggingFace downloads) works at runtime.
 
 USER 65532:65532
 WORKDIR /opt/model2vec
