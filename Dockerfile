@@ -1,39 +1,29 @@
-# ─── Stage 1: Builder ────────────────────────────────────────────────────────
-FROM rust:slim AS builder
+# syntax=docker/dockerfile:1.7
+#
+# Dockerfile for model2vec-api using distroless image with pre-built release binaries.
+#
+# Expects pre-built binaries at:
+#   bin/amd64/model2vec-api
+#   bin/arm64/model2vec-api
+#
+# Usage (CI / pre-built):
+#   docker buildx build --platform linux/amd64,linux/arm64 -t model2vec-api .
+#
 
-# Install only what's needed to compile
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    pkg-config \
-    libssl-dev \
-    ca-certificates \
-    g++ \
-    && rm -rf /var/lib/apt/lists/*
+FROM gcr.io/distroless/cc-debian13:nonroot AS runtime
 
-WORKDIR /build
+ARG TARGETARCH
 
-# Cache dependencies with BuildKit — Docker manages this internally,
-# no host mount needed. Portable across machines and CI/CD.
-COPY Cargo.toml Cargo.lock ./
+# Copy the pre-built binary for target architecture.
+COPY --chown=65532:65532 bin/${TARGETARCH}/model2vec-api /model2vec-api
 
+# CA certificates so HTTPS (HuggingFace downloads) works at runtime.
+COPY --from=busybox:1.36 /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 
-COPY src ./src
-RUN --mount=type=cache,target=/build/target \
-    --mount=type=cache,target=/usr/local/cargo/registry \
-    cargo build --release && \
-    cp target/release/model2vec-api /model2vec-api
+USER 65532:65532
+WORKDIR /opt/model2vec
 
-# ─── Stage 2: Distroless runtime ─────────────────────────────────────────────
-# gcr.io/distroless/cc-debian13 contains glibc + libgcc — nothing else.
-# Perfect for statically/dynamically linked Rust binaries.
-FROM gcr.io/distroless/cc-debian13:nonroot
-
-# Copy CA certificates so HTTPS (HuggingFace downloads) works at runtime
-COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
-
-# Copy the compiled binary (placed at /model2vec-api by the builder's cp step)
-COPY --from=builder /model2vec-api /model2vec-api
-
-# Models are mounted at /models — users can bind-mount local model directories.
+# Model weights can be bind-mounted at /models (read-only) — see docker-compose.yml.
 VOLUME ["/models"]
 
 EXPOSE 22671

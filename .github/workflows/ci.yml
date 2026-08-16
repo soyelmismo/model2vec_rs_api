@@ -1,28 +1,383 @@
-name: quality
-on: workflow_call
+# .github/workflows/ci.yml — unified model2vec-api CI/CD pipeline.
+#
+# Modeled on the openproxy CI pattern:
+#   1. rust-checks      — fmt + clippy + check + test (GATE)
+#   2. prepare-version  — computes next semver from tags + commit log
+#   3. build            — multi-target release matrix (linux x86_64+aarch64, win, mac)
+#   4. docker           — multi-arch (amd64+arm64) image from PRE-BUILT binaries, push to ghcr.io
+#   5. release          — tags v<version>, creates GitHub Release with zips
+#
+# On PRs: rust-checks run.
+# On main pushes: the full pipeline runs, including build matrix, docker
+# push and a tagged GitHub Release.
+#
+# Concurrency: per-ref, cancel-in-progress=false so a main push mid-
+# release doesn't get cancelled by the next push.
+
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+permissions:
+  contents: write   # tag + release creation
+  packages: write   # ghcr.io push
+  actions: read     # cross-job artifact download
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: false
 
 env:
   CARGO_TERM_COLOR: always
-  RUSTFLAGS: -Dwarnings
+  RUST_BACKTRACE: 1
 
 jobs:
-  lint:
-    name: Lint & Format
+  # ----------
+  # 1. Rust checks — fmt, clippy (-D warnings), check, test. GATE.
+  # ----------
+  rust-checks:
+    name: Rust fmt + clippy + check + test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Rust toolchain
-        run: |
-          rustup set profile minimal
-          rustup toolchain install stable --component rustfmt --component clippy
-          rustup default stable
+      - name: Install Rust toolchain (stable + rustfmt + clippy)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt,clippy
 
-      - name: Rust cache
+      - name: Cache cargo
         uses: Swatinem/rust-cache@v2
 
-      - name: Check formatting
-        run: cargo fmt --all --check
+      - name: cargo fmt --check
+        run: cargo fmt --all -- --check
 
-      - name: Clippy
-        run: cargo clippy --all-targets -- -D warnings
+      - name: cargo clippy
+        run: cargo clippy --all-targets --workspace -- -D warnings
+
+      - name: cargo test
+        run: cargo test --workspace
+
+  # ----------
+  # 2. Compute next version from tags + conventional-commit log (openproxy pattern).
+  # ----------
+  prepare-version:
+    name: Compute next version
+    runs-on: ubuntu-latest
+    needs: [rust-checks]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      prev_tag: ${{ steps.version.outputs.prev_tag }}
+      changelog: ${{ steps.changelog.outputs.changelog }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # need full history for `git tag` + `git log range`
+
+      - name: Compute next version
+        id: version
+        run: |
+          set -euo pipefail
+          # Latest v* tag, sorted by semantic version descending.
+          LATEST_TAG="$(git tag --list 'v*' --sort=-v:refname | head -n 1 || true)"
+          if [ -z "$LATEST_TAG" ]; then
+            # No prior release — bootstrap at v1.0.0.
+            VERSION="1.0.0"
+            PREV_TAG=""
+          else
+            PREV_TAG="$LATEST_TAG"
+            BASE="${LATEST_TAG#v}"
+            MAJOR="$(printf '%s' "$BASE" | cut -d. -f1)"
+            MINOR="$(printf '%s' "$BASE" | cut -d. -f2)"
+            PATCH="$(printf '%s' "$BASE" | cut -d. -f3)"
+            RANGE="${LATEST_TAG}..HEAD"
+            # Conventional-commits semantics:
+            #   - `feat!:` or `feat(scope)!:` or `BREAKING CHANGE:` → major
+            #   - `feat:` or `feat(scope):` (no `!`) → minor
+            #   - everything else (`fix:`, `chore:`, `docs:`, ...) → patch
+            LOG="$(git log "$RANGE" --pretty=format:'%s%n%b%n' || true)"
+            if printf '%s' "$LOG" | grep -qiE 'feat(\\([^)]+\\))?!:|BREAKING[ -]CHANGE'; then
+              MAJOR=$((MAJOR+1)); MINOR=0; PATCH=0
+            elif printf '%s' "$LOG" | grep -qiE 'feat(\\([^)]+\\))?:'; then
+              MINOR=$((MINOR+1)); PATCH=0
+            else
+              PATCH=$((PATCH+1))
+            fi
+            VERSION="${MAJOR}.${MINOR}.${PATCH}"
+          fi
+          {
+            echo "version=${VERSION}"
+            echo "prev_tag=${PREV_TAG}"
+          } >> "$GITHUB_OUTPUT"
+          echo "Computed version: ${VERSION} (previous tag: '${PREV_TAG}')"
+
+      - name: Generate changelog
+        id: changelog
+        run: |
+          set -euo pipefail
+          PREV_TAG="${{ steps.version.outputs.prev_tag }}"
+          if [ -z "$PREV_TAG" ]; then
+            # No prior tag — emit the most recent 200 commits as the
+            # initial changelog. Truncate so the release body stays
+            # readable on GitHub's UI.
+            BODY=""
+            count=0
+            while IFS= read -r line; do
+              BODY+="${line}"$'\n'
+              count=$((count+1))
+              [ "$count" -ge 200 ] && break
+            done < <(git log --pretty=format:'- %s (%h)')
+          else
+            BODY="$(git log "${PREV_TAG}..HEAD" --pretty=format:'- %s (%h)')"
+          fi
+          if [ -z "$BODY" ]; then
+            BODY="- No changes since ${PREV_TAG:-start}"
+          fi
+          {
+            echo "changelog<<CHANGELOG_EOF"
+            echo "$BODY"
+            echo "CHANGELOG_EOF"
+          } >> "$GITHUB_OUTPUT"
+
+  # ----------
+  # 3. Build matrix — 4 targets, each on its native runner.
+  # ----------
+  build:
+    name: Build ${{ matrix.target }}
+    needs: [rust-checks, prepare-version]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            runner: ubuntu-latest
+            os_family: linux
+          - target: aarch64-unknown-linux-gnu
+            runner: ubuntu-latest
+            os_family: linux
+            apt_cross: gcc-aarch64-linux-gnu
+            cross_cc: aarch64-linux-gnu-gcc
+          - target: x86_64-pc-windows-msvc
+            runner: windows-latest
+            os_family: windows
+          - target: aarch64-apple-darwin
+            runner: macos-14
+            os_family: macos
+    runs-on: ${{ matrix.runner }}
+    continue-on-error: false
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain + target
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      - name: Install Linux cross-compiler
+        if: matrix.apt_cross != ''
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ${{ matrix.apt_cross }}
+
+      - name: Configure Linux cross-linker env
+        if: matrix.cross_cc != ''
+        run: |
+          TARGET_UPPER="$(printf '%s' '${{ matrix.target }}' | tr '[:lower:]-' '[:upper:]_')"
+          {
+            echo "CARGO_TARGET_${TARGET_UPPER}_LINKER=${{ matrix.cross_cc }}"
+            echo "CC_${{ matrix.target }}=${{ matrix.cross_cc }}"
+            echo "CXX_${{ matrix.target }}=${{ matrix.cross_cc }}"
+          } >> "$GITHUB_ENV"
+
+      - name: Build model2vec-api (release)
+        shell: bash
+        run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Stage package (non-Windows)
+        if: matrix.os_family != 'windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="${{ needs.prepare-version.outputs.version }}"
+          TARGET="${{ matrix.target }}"
+          STAGE="model2vec-api-${VERSION}-${TARGET}"
+          mkdir -p "${STAGE}"
+          cp "target/${TARGET}/release/model2vec-api" "${STAGE}/model2vec-api"
+          cp config.example.toml "${STAGE}/" 2>/dev/null || true
+          cat > "${STAGE}/README" <<EOF
+          model2vec-api ${VERSION} (${TARGET})
+          ==========
+
+          Minimal, OpenAI-compatible embeddings server powered by model2vec-rs.
+
+          Quick start:
+            M2V_API_KEY=your-secret M2V_MODELS=multi:minishlab/potion-multilingual-128M ./model2vec-api
+
+          Health check:
+            curl http://127.0.0.1:22671/health
+          EOF
+          zip -r "model2vec-api-${VERSION}-${TARGET}.zip" "${STAGE}"
+
+      - name: Stage package (Windows)
+        if: matrix.os_family == 'windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="${{ needs.prepare-version.outputs.version }}"
+          TARGET="${{ matrix.target }}"
+          STAGE="model2vec-api-${VERSION}-${TARGET}"
+          mkdir -p "${STAGE}"
+          cp "target/${TARGET}/release/model2vec-api.exe" "${STAGE}/model2vec-api.exe"
+          cat > "${STAGE}/README" <<EOF
+          model2vec-api ${VERSION} (${TARGET})
+          ==========
+
+          Minimal, OpenAI-compatible embeddings server powered by model2vec-rs.
+
+          Quick start:
+            set M2V_API_KEY=your-secret
+            set M2V_MODELS=multi:minishlab/potion-multilingual-128M
+            model2vec-api.exe
+          EOF
+          7z a "model2vec-api-${VERSION}-${TARGET}.zip" "${STAGE}"
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-${{ matrix.target }}
+          path: model2vec-api-*.zip
+          retention-days: 7
+          if-no-files-found: error
+
+  # ----------
+  # 4. Docker build & push — multi-arch, FROM PRE-BUILT binaries (openproxy pattern).
+  #    Push only on main.
+  # ----------
+  docker:
+    name: Docker build & push
+    runs-on: ubuntu-latest
+    needs: [rust-checks, prepare-version, build]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download x86_64 binary artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: build-x86_64-unknown-linux-gnu
+          path: tmp-x86_64
+
+      - name: Download aarch64 binary artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: build-aarch64-unknown-linux-gnu
+          path: tmp-aarch64
+
+      - name: Prepare binaries for Docker build
+        run: |
+          set -euo pipefail
+          mkdir -p bin/amd64 bin/arm64
+          unzip -q tmp-x86_64/model2vec-api-*.zip -d tmp-x86_64-unzipped
+          unzip -q tmp-aarch64/model2vec-api-*.zip -d tmp-aarch64-unzipped
+          cp tmp-x86_64-unzipped/model2vec-api-*/model2vec-api bin/amd64/model2vec-api
+          cp tmp-aarch64-unzipped/model2vec-api-*/model2vec-api bin/arm64/model2vec-api
+          chmod +x bin/amd64/model2vec-api bin/arm64/model2vec-api
+          rm -rf tmp-x86_64 tmp-aarch64 tmp-x86_64-unzipped tmp-aarch64-unzipped
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to ghcr.io
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Compute image tags
+        id: tags
+        run: |
+          set -euo pipefail
+          VERSION="${{ needs.prepare-version.outputs.version }}"
+          REPO="ghcr.io/soyelmismo/model2vec-api"
+          # On main: tag both :<version> and :latest. On PRs: skip push
+          # entirely (handled by the `push` flag), but build for cache validation.
+          if [ "${GITHUB_REF}" = "refs/heads/main" ] && [ "${GITHUB_EVENT_NAME}" = "push" ]; then
+            echo "tags=${REPO}:${VERSION},${REPO}:latest" >> "$GITHUB_OUTPUT"
+            echo "push=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "tags=${REPO}:pr-${VERSION}" >> "$GITHUB_OUTPUT"
+            echo "push=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build & push image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: ${{ steps.tags.outputs.push == 'true' }}
+          tags: ${{ steps.tags.outputs.tags }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          provenance: false
+
+  # ----------
+  # 5. Release — only on main pushes. Creates v<version> tag + GitHub Release
+  #    with all build-*.zip artifacts attached.
+  # ----------
+  release:
+    name: Tag & GitHub Release
+    runs-on: ubuntu-latest
+    needs: [rust-checks, prepare-version, build, docker]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: build-*
+          merge-multiple: true
+          path: release-assets
+
+      - name: Create tag + GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ needs.prepare-version.outputs.version }}
+          name: v${{ needs.prepare-version.outputs.version }}
+          body: |
+            ## Changes
+
+            ${{ needs.prepare-version.outputs.changelog }}
+
+            ## Downloads
+
+            Each zip contains the `model2vec-api` binary and a README for that target.
+
+            | File | Target |
+            |------|--------|
+            | `model2vec-api-${{ needs.prepare-version.outputs.version }}-x86_64-unknown-linux-gnu.zip` | Linux x86_64 |
+            | `model2vec-api-${{ needs.prepare-version.outputs.version }}-aarch64-unknown-linux-gnu.zip` | Linux arm64 |
+            | `model2vec-api-${{ needs.prepare-version.outputs.version }}-x86_64-pc-windows-msvc.zip` | Windows x86_64 |
+            | `model2vec-api-${{ needs.prepare-version.outputs.version }}-aarch64-apple-darwin.zip` | macOS Apple Silicon |
+
+            Docker image: `ghcr.io/soyelmismo/model2vec-api:${{ needs.prepare-version.outputs.version }}`
+          files: release-assets/model2vec-api-*.zip
+          fail_on_unmatched_files: false
+          generate_release_notes: false
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
